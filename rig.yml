@@ -25,6 +25,30 @@ pods:
         runtime: claude-code
         profile: default
         cwd: "."
+      - id: plan
+        label: Product Planner
+        agent_ref: "local:agents/product-planner"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+      - id: design
+        label: UI/UX Designer
+        agent_ref: "local:agents/ui-designer"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+      - id: be
+        label: Backend Engineer
+        agent_ref: "local:agents/backend-engineer"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+      - id: qa
+        label: QA Tester
+        agent_ref: "local:agents/qa-tester"
+        runtime: claude-code
+        profile: default
+        cwd: "."
       - id: review
         label: Code Reviewer
         agent_ref: "local:agents/code-reviewer"
@@ -53,6 +77,24 @@ pods:
       - kind: delegates_to
         from: fe
         to: review
+      - kind: delegates_to
+        from: lead
+        to: be
+      - kind: delegates_to
+        from: be
+        to: review
+      - kind: delegates_to
+        from: lead
+        to: qa
+      - kind: delegates_to
+        from: lead
+        to: design
+      - kind: delegates_to
+        from: design
+        to: fe
+      - kind: delegates_to
+        from: lead
+        to: plan
       - kind: delegates_to
         from: lead
         to: deploy
