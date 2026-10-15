@@ -3,8 +3,10 @@
 사용법: python solver.py sample_input.json > output.json
 """
 import json
+import math
 import re
 import sys
+import traceback
 from datetime import date, datetime, timedelta
 
 from ortools.sat.python import cp_model
@@ -94,7 +96,102 @@ def _fail(status, message):
     }
 
 
+# 입력 숫자 상한(사용자 승인). 넘으면 INVALID_INPUT — 모델 크기와 비용 합계가 유한·정확하게 유지되는 범위
+MAX_PERIOD_DAYS = 366
+MAX_SHIFT_HOURS = 24
+MAX_WEEK_HOURS = 168
+MAX_HEADCOUNT = 10000
+MAX_WAGE = 10_000_000
+MAX_TIME_LIMIT = 100  # 웹 API가 120초에 엔진을 종료
+
+
+def _is_int(v, hi, lo=0):
+    return type(v) is int and lo <= v <= hi
+
+
+def _is_num(v, hi, lo=0):
+    """유한한 숫자(Infinity/NaN 거부)이며 lo..hi 범위."""
+    # int는 float 변환 없이 범위만 비교(거대 정수를 isfinite에 넘기면 OverflowError)
+    return type(v) is int and lo <= v <= hi or type(v) is float and math.isfinite(v) and lo <= v <= hi
+
+
+def _hhmm(v):
+    return isinstance(v, str) and re.fullmatch(r"\d{2}:\d{2}", v) and int(v[:2]) <= 24 and int(v[3:]) < 60
+
+
+def _ymd(v):
+    if not (isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v)):
+        return None
+    try:
+        return date.fromisoformat(v)
+    except ValueError:
+        return None
+
+
+def _check_input(data):
+    """입력 구조 검사. 문제가 있으면 이유 문자열, 없으면 None. 이후 코드가 구조 오류로 예외를 내지 않도록 보장."""
+    if not isinstance(data, dict):
+        return "입력은 JSON 객체여야 합니다."
+    for k, t in (("schedule_period", dict), ("shift_definitions", dict), ("shift_requirements", dict), ("employees", list)):
+        if not isinstance(data.get(k), t):
+            return f"{k}가 없거나 형식이 잘못되었습니다({'객체' if t is dict else '배열'} 필요)."
+    rules = data.get("rules", {})
+    if not isinstance(rules, dict):
+        return "rules는 객체여야 합니다."
+    for k, ok in (("max_weekly_hours", lambda v: _is_int(v, MAX_WEEK_HOURS)),
+                  ("max_consecutive_days", lambda v: _is_int(v, MAX_PERIOD_DAYS, 1)),
+                  ("min_rest_hours", lambda v: _is_num(v, MAX_WEEK_HOURS)),
+                  ("default_hourly_wage", lambda v: _is_num(v, MAX_WAGE)),
+                  ("time_limit_seconds", lambda v: _is_num(v, MAX_TIME_LIMIT) and v > 0),
+                  ("undesirable_shifts", lambda v: isinstance(v, list) and all(isinstance(s, str) for s in v))):
+        if k in rules and not ok(rules[k]):
+            return f"rules.{k} 값이 잘못되었습니다."
+    p = data["schedule_period"]
+    start, end = _ymd(p.get("start_date")), _ymd(p.get("end_date"))
+    if not (start and end):
+        return "schedule_period의 start_date, end_date는 YYYY-MM-DD 형식이어야 합니다."
+    if start > end:
+        return "schedule_period의 start_date가 end_date보다 늦습니다."
+    if (end - start).days + 1 > MAX_PERIOD_DAYS:
+        return f"schedule_period는 최대 {MAX_PERIOD_DAYS}일입니다."
+    shifts = data["shift_definitions"]
+    for k, sd in shifts.items():
+        if not (isinstance(sd, dict) and _hhmm(sd.get("start")) and _hhmm(sd.get("end")) and _is_int(sd.get("hours", 0), MAX_SHIFT_HOURS)):
+            return f"shift_definitions.{k}는 start/end(HH:MM)와 0~{MAX_SHIFT_HOURS} 정수 hours가 필요합니다."
+    for k, r in data["shift_requirements"].items():
+        if k not in shifts:
+            return f"shift_requirements의 {k}는 정의되지 않은 시프트입니다."
+        if not (isinstance(r, dict) and all(_is_int(r.get(f, 0), MAX_HEADCOUNT) for f in ("min_count", "min_senior"))):
+            return f"shift_requirements.{k}의 min_count, min_senior는 0~{MAX_HEADCOUNT} 정수여야 합니다."
+    ids = set()
+    for n, e in enumerate(data["employees"]):
+        if not (isinstance(e, dict) and isinstance(e.get("id"), str) and isinstance(e.get("name"), str)):
+            return f"employees[{n}]에 문자열 id와 name이 필요합니다."
+        i = e["id"]
+        if i in ids:
+            return f"직원 id {i}가 중복되었습니다."
+        ids.add(i)
+        if not all(isinstance(e.get(k, ""), str) for k in ("employment_type", "level")):  # 출력에 그대로 실림
+            return f"{i} employment_type, level은 문자열이어야 합니다."
+        leaves, slots, pref = e.get("approved_leaves", []), e.get("available_time_slots"), e.get("preferences", {})
+        if not (isinstance(leaves, list) and all(isinstance(d, str) for d in leaves)):
+            return f"{i} approved_leaves는 날짜 문자열 배열이어야 합니다."
+        if slots is not None and not (isinstance(slots, list) and all(
+                isinstance(s, str) and s.count("-") == 1 and all(_hhmm(t) for t in s.split("-")) for s in slots)):
+            return f"{i} available_time_slots는 'HH:MM-HH:MM' 배열이어야 합니다."
+        if not isinstance(pref, dict) or ("preferred_shift" in pref and not (isinstance(pref["preferred_shift"], str) and pref["preferred_shift"] in shifts)):
+            return f"{i} preferences.preferred_shift가 정의되지 않은 시프트입니다."
+        if "max_weekly_hours" in e and not _is_int(e["max_weekly_hours"], MAX_WEEK_HOURS):
+            return f"{i} max_weekly_hours는 0~{MAX_WEEK_HOURS} 정수여야 합니다."
+        if "hourly_wage" in e and not _is_num(e["hourly_wage"], MAX_WAGE):
+            return f"{i} hourly_wage는 0~{MAX_WAGE} 숫자여야 합니다."
+    return None
+
+
 def solve(data):
+    err = _check_input(data)
+    if err:
+        return _fail("INVALID_INPUT", err)
     rules = {**DEFAULT_RULES, **data.get("rules", {})}
     p = data["schedule_period"]
     start, end = date.fromisoformat(p["start_date"]), date.fromisoformat(p["end_date"])
@@ -107,8 +204,8 @@ def solve(data):
     # 순환 패턴 입력 검사: 연속 근무 상한과 모순되는 설정은 해를 찾기 전에 입력 오류로 거부
     rp = rules.get("rotation_pattern")
     if rp is not None:
-        if not (isinstance(rp, dict) and all(type(rp.get(k)) is int and rp[k] >= 1 for k in ("work_days", "off_days"))):
-            return _fail("INVALID_INPUT", "rotation_pattern의 work_days, off_days는 1 이상의 정수여야 합니다.")
+        if not (isinstance(rp, dict) and all(_is_int(rp.get(k), MAX_PERIOD_DAYS, 1) for k in ("work_days", "off_days"))):
+            return _fail("INVALID_INPUT", f"rotation_pattern의 work_days, off_days는 1~{MAX_PERIOD_DAYS} 정수여야 합니다.")
         if rp["work_days"] > rules["max_consecutive_days"]:
             return _fail("INVALID_INPUT", f"rotation_pattern 근무 {rp['work_days']}일이 최대 연속 근무일 "
                                           f"{rules['max_consecutive_days']}일을 초과합니다.")
@@ -400,5 +497,11 @@ def validate(data, result):
 
 
 if __name__ == "__main__":
-    with open(sys.argv[1], encoding="utf-8") as f:
-        print(json.dumps(solve(json.load(f)), ensure_ascii=False, indent=2))
+    # 안전망: 구조 검사가 놓친 예외도 비정상 종료 대신 INVALID_INPUT으로 응답. 원인 추적용 traceback은 stderr에 남김
+    try:
+        with open(sys.argv[1], encoding="utf-8") as f:
+            out = solve(json.load(f))
+    except Exception:
+        traceback.print_exc()
+        out = _fail("INVALID_INPUT", "입력을 처리하지 못했습니다. 입력 형식을 확인하세요.")
+    print(json.dumps(out, ensure_ascii=False, indent=2))

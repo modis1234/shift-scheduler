@@ -49,6 +49,20 @@ npm run dev   # http://localhost:3000
 
 `rules` 키(선택)로 기본값을 덮어쓸 수 있다: `max_weekly_hours`, `min_rest_hours`, `max_consecutive_days`, `undesirable_shifts`, `default_hourly_wage`, `time_limit_seconds`, `rotation_pattern`.
 
+입력 숫자 상한(모든 숫자는 유한값이어야 하며 `Infinity`·`NaN`은 거부, 범위를 넘으면 `INVALID_INPUT`):
+
+| 필드 | 허용 범위 |
+|---|---|
+| 기간(`start_date`~`end_date`) | 최대 366일 |
+| `shift_definitions.*.hours` | 정수 0~24 |
+| `rules.max_weekly_hours`, `employees[].max_weekly_hours` | 정수 0~168 |
+| `rules.min_rest_hours` | 숫자 0~168 |
+| `rules.max_consecutive_days` | 정수 1~366 |
+| `shift_requirements.*.min_count`, `min_senior` | 정수 0~10000 |
+| `rules.default_hourly_wage`, `employees[].hourly_wage` | 숫자 0~10,000,000 |
+| `rules.time_limit_seconds` | 숫자 0 초과~100 (웹 API가 120초에 엔진 종료) |
+| `rotation_pattern.work_days` / `off_days` | 정수 1~`max_consecutive_days` / 1~366 |
+
 결과의 `rotation_offsets`(`{직원 id: 위상}`)는 배정이 없는 직원까지 포함한 풀타임 전원의 위상이다. `rotation_offset`(입력·출력 공통)은 기간 시작일이 주기 안에서 몇 번째 날인지를 0부터 센 값이다(`0..work_days+off_days-1`, 범위 밖이면 `INVALID_INPUT`). 패턴을 다음 기간으로 이어가려면 다음 기간 입력에 `(offset + 이전 기간 일수) % (work_days + off_days)`를 넣는다.
 
 결과의 `trailing_consecutive_work_days`(`{직원 id: 일수}`)는 기간 마지막 날까지 이어진 연속 근무일수다(기간 전체가 근무면 `prior` 포함, 배정 없는 직원은 0). 다음 기간 입력의 `prior_consecutive_work_days`로 그대로 넘긴다. 값이 `max_consecutive_days`를 넘거나 정수가 아니면 `INVALID_INPUT`.
