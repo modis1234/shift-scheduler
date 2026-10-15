@@ -1,26 +1,237 @@
 @import "tailwindcss";
 
+/* 디자인 토큰. 컴포넌트는 아래 @theme 유틸리티(bg-surface, text-muted 등)나 컴포넌트 클래스로만 색을 쓴다 */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dde1e7;
+  --border-strong: #7d8794;
+  --text: #1b2028;
+  --text-muted: #59636f;
+  --accent: #2456cc;
+  --accent-hover: #1c47ad;
+  --accent-fg: #ffffff;
+  --accent-soft: #e7eefc;
+  --success: #166b37;
+  --success-soft: #e2f3e8;
+  --warning: #8a4b00;
+  --warning-soft: #fdf0d9;
+  --danger: #b3261e;
+  --danger-soft: #fce9e7;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 시프트 팔레트 (배경/글자). 휴가(danger)와 겹치지 않게 빨강 계열은 뺐다 */
+  --shift-0-bg: #dbeefd; --shift-0-fg: #0b4366;
+  --shift-1-bg: #d5f5e3; --shift-1-fg: #0b4a30;
+  --shift-2-bg: #ebe5fd; --shift-2-fg: #45208a;
+  --shift-3-bg: #fdf0c8; --shift-3-fg: #6e3a08;
+  --shift-4-bg: #cff6ef; --shift-4-fg: #0f4a45;
+  --shift-5-bg: #e2e6fb; --shift-5-fg: #2b3487;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.04);
+
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0e1116;
+    --surface: #161b22;
+    --surface-2: #1d232c;
+    --border: #2b323d;
+    --border-strong: #6b7585;
+    --text: #e6e9ee;
+    --text-muted: #9ba5b3;
+    --accent: #6b9af2;
+    --accent-hover: #86adf5;
+    --accent-fg: #0b1220;
+    --accent-soft: #1a2741;
+    --success: #5cc985;
+    --success-soft: #11291b;
+    --warning: #e6ac4c;
+    --warning-soft: #2e2210;
+    --danger: #f2827a;
+    --danger-soft: #331716;
+
+    --shift-0-bg: #103a57; --shift-0-fg: #d3ecfd;
+    --shift-1-bg: #0f3d2a; --shift-1-fg: #c8f3da;
+    --shift-2-bg: #33255e; --shift-2-fg: #e5dcff;
+    --shift-3-bg: #46300c; --shift-3-fg: #fde6b0;
+    --shift-4-bg: #0f3d39; --shift-4-fg: #c4f4eb;
+    --shift-5-bg: #262d5c; --shift-5-fg: #dde2ff;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+
+    color-scheme: dark;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-noto-sans-kr), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  /* @theme inline은 --font-sans를 변수로 내보내지 않으므로 next/font 변수를 직접 쓴다 */
+  font-family: var(--font-noto-sans-kr), system-ui, sans-serif;
+  word-break: keep-all;
+}
+
+/* 화면 아래 sticky 생성 바(sm 이상)에 포커스된 입력이 가려지지 않게 스크롤 여백을 둔다 */
+@media (min-width: 40rem) {
+  html {
+    scroll-padding-bottom: 6rem;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    height: 2.5rem;
+    padding: 0 var(--space-4);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  .btn-secondary {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .btn-sm {
+    height: 2rem;
+    padding: 0 var(--space-3);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+  .btn-danger-ghost {
+    height: 2rem;
+    padding: 0 var(--space-2);
+    background: transparent;
+    color: var(--danger);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+  .btn-danger-ghost:hover {
+    background: var(--danger-soft);
+  }
+
+  .input {
+    height: 2.25rem;
+    padding: 0 var(--space-2);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.875rem;
+  }
+  .input::placeholder {
+    color: var(--text-muted);
+  }
+  .input:focus-visible {
+    outline-offset: 0;
+    border-color: var(--accent);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem var(--space-2);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-success { background: var(--success-soft); color: var(--success); }
+  .badge-warning { background: var(--warning-soft); color: var(--warning); }
+  .badge-danger { background: var(--danger-soft); color: var(--danger); }
+
+  .alert {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+  }
+  .alert-info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .alert-warning { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
+  .alert-danger { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+  .data-table th[scope="col"] {
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .shift-0 { background: var(--shift-0-bg); color: var(--shift-0-fg); }
+  .shift-1 { background: var(--shift-1-bg); color: var(--shift-1-fg); }
+  .shift-2 { background: var(--shift-2-bg); color: var(--shift-2-fg); }
+  .shift-3 { background: var(--shift-3-bg); color: var(--shift-3-fg); }
+  .shift-4 { background: var(--shift-4-bg); color: var(--shift-4-fg); }
+  .shift-5 { background: var(--shift-5-bg); color: var(--shift-5-fg); }
+  .leave { background: var(--danger-soft); color: var(--danger); }
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
 }
