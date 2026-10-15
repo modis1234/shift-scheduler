@@ -11,6 +11,14 @@ const TIMEOUT_MS = 120_000;
 const ENGINE_DIR = process.env.ENGINE_DIR ?? path.resolve(process.cwd(), "../algorithm-engine");
 const ENGINE_PYTHON = process.env.ENGINE_PYTHON ?? `${ENGINE_DIR}/.venv/bin/python`;
 
+// CP-SAT은 요청 하나가 여러 코어를 쓰므로 동시에 도는 엔진 수를 제한한다. 넘으면 대기 없이 429
+// ponytail: Node 프로세스 하나 안의 카운터라 인스턴스를 여러 개 띄우면 전체 제한이 아니다. 그때는 외부 큐나 공유 세마포어로 옮긴다
+const maxConcurrency = Number(process.env.ENGINE_MAX_CONCURRENCY ?? 2);
+const MAX_CONCURRENCY = Number.isInteger(maxConcurrency) && maxConcurrency >= 1 ? maxConcurrency : 2;
+if (MAX_CONCURRENCY !== maxConcurrency) console.warn(`[engine] ENGINE_MAX_CONCURRENCY가 1 이상 정수가 아니어서 2를 사용합니다.`);
+const RETRY_AFTER_SECONDS = 30; // 엔진 기본 time_limit_seconds
+let running = 0;
+
 const error = (status: number, message: string) => Response.json({ error: message }, { status });
 
 /** 본문을 최대 limit 바이트까지만 읽는다. 넘으면 null (Content-Length 없는 chunked 요청도 막기 위해 스트림으로 센다). */
@@ -90,7 +98,19 @@ export async function POST(req: Request) {
     return error(400, "본문은 JSON 객체여야 합니다.");
   }
 
-  const run = await runEngine(body);
+  if (running >= MAX_CONCURRENCY) {
+    return Response.json(
+      { error: "다른 근무표를 생성하고 있습니다. 잠시 후 다시 시도하세요." },
+      { status: 429, headers: { "Retry-After": String(RETRY_AFTER_SECONDS) } },
+    );
+  }
+  running++;
+  let run: EngineRun;
+  try {
+    run = await runEngine(body);
+  } finally {
+    running--;
+  }
   if (run.kind === "timeout") return error(504, "엔진 실행 시간(120초)을 초과했습니다.");
   if (run.kind === "failed") {
     console.error("[engine]", run.reason);
