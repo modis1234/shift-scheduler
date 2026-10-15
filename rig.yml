@@ -19,6 +19,12 @@ pods:
         runtime: claude-code
         profile: default
         cwd: "."
+      - id: fe
+        label: Frontend Engineer
+        agent_ref: "local:agents/frontend-engineer"
+        runtime: claude-code
+        profile: default
+        cwd: "."
       - id: review
         label: Code Reviewer
         agent_ref: "local:agents/code-reviewer"
@@ -40,6 +46,12 @@ pods:
         to: review
       - kind: delegates_to
         from: algo
+        to: review
+      - kind: delegates_to
+        from: lead
+        to: fe
+      - kind: delegates_to
+        from: fe
         to: review
       - kind: delegates_to
         from: lead
