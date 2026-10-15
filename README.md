@@ -15,6 +15,8 @@ shift-scheduler/
 
 ## 실행
 
+`./dev.sh [포트]`: 엔진 venv와 web-client 의존성이 없으면 만들고 개발 서버를 띄운다(기본 3000). 아래는 각각 따로 실행하는 방법이다.
+
 ### algorithm-engine
 ```bash
 cd algorithm-engine
