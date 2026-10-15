@@ -33,6 +33,7 @@ npm run dev   # http://localhost:3000
 
 화면의 [근무표 생성]은 `POST /api/schedule`이 엔진(`solver.py`)을 직접 실행해 결과를 돌려준다(120초 초과 시 504). 엔진 위치는 환경변수
 `ENGINE_DIR`(기본 `../algorithm-engine`), python은 `ENGINE_PYTHON`(기본 `$ENGINE_DIR/.venv/bin/python`)으로 바꿀 수 있으므로 위 algorithm-engine venv를 먼저 만들어 둔다.
+동시에 실행되는 엔진 수는 `ENGINE_MAX_CONCURRENCY`(1 이상 정수, 기본 2)로 제한하며, 넘는 요청은 기다리지 않고 429(`Retry-After: 30`)로 거절한다. 제한은 Node 프로세스 단위다.
 
 ## 엔진 규칙 매핑
 
