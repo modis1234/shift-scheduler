@@ -1,0 +1,173 @@
+{
+  "industry_preset": "Retail_FandB",
+  "schedule_period": {
+    "start_date": "2026-11-01",
+    "end_date": "2026-11-30"
+  },
+  "rules": {
+    "max_weekly_hours": 52,
+    "min_rest_hours": 11,
+    "max_consecutive_days": 5,
+    "undesirable_shifts": [
+      "Closing",
+      "Night"
+    ],
+    "default_hourly_wage": 10320,
+    "time_limit_seconds": 30
+  },
+  "shift_definitions": {
+    "Opening": {
+      "start": "08:00",
+      "end": "16:00",
+      "hours": 8
+    },
+    "Middle": {
+      "start": "12:00",
+      "end": "20:00",
+      "hours": 8
+    },
+    "Closing": {
+      "start": "16:00",
+      "end": "24:00",
+      "hours": 8
+    },
+    "Peak_PartTime": {
+      "start": "11:00",
+      "end": "15:00",
+      "hours": 4
+    },
+    "Off": {
+      "start": "00:00",
+      "end": "24:00",
+      "hours": 0
+    }
+  },
+  "shift_requirements": {
+    "Opening": {
+      "min_count": 2,
+      "min_senior": 1
+    },
+    "Middle": {
+      "min_count": 2,
+      "min_senior": 1
+    },
+    "Closing": {
+      "min_count": 2,
+      "min_senior": 1
+    },
+    "Peak_PartTime": {
+      "min_count": 1,
+      "min_senior": 0
+    }
+  },
+  "employees": [
+    {
+      "id": "E01",
+      "name": "김매니저",
+      "employment_type": "Full_Time",
+      "level": "Senior",
+      "approved_leaves": [
+        "2026-11-10"
+      ],
+      "preferences": {
+        "preferred_shift": "Opening"
+      }
+    },
+    {
+      "id": "E02",
+      "name": "정직원2",
+      "employment_type": "Full_Time",
+      "level": "Senior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E03",
+      "name": "정직원3",
+      "employment_type": "Full_Time",
+      "level": "Senior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E04",
+      "name": "정직원4",
+      "employment_type": "Full_Time",
+      "level": "Senior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E05",
+      "name": "정직원5",
+      "employment_type": "Full_Time",
+      "level": "Senior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E06",
+      "name": "정직원6",
+      "employment_type": "Full_Time",
+      "level": "Junior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E07",
+      "name": "정직원7",
+      "employment_type": "Full_Time",
+      "level": "Junior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E08",
+      "name": "정직원8",
+      "employment_type": "Full_Time",
+      "level": "Junior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E09",
+      "name": "정직원9",
+      "employment_type": "Full_Time",
+      "level": "Junior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E10",
+      "name": "정직원10",
+      "employment_type": "Full_Time",
+      "level": "Junior",
+      "approved_leaves": []
+    },
+    {
+      "id": "E11",
+      "name": "박알바",
+      "employment_type": "Part_Time",
+      "level": "Junior",
+      "max_weekly_hours": 15,
+      "available_time_slots": [
+        "11:00-15:00"
+      ],
+      "approved_leaves": []
+    },
+    {
+      "id": "E12",
+      "name": "알바12",
+      "employment_type": "Part_Time",
+      "level": "Junior",
+      "max_weekly_hours": 15,
+      "available_time_slots": [
+        "11:00-15:00"
+      ],
+      "approved_leaves": []
+    },
+    {
+      "id": "E13",
+      "name": "알바13",
+      "employment_type": "Part_Time",
+      "level": "Junior",
+      "max_weekly_hours": 15,
+      "available_time_slots": [
+        "11:00-15:00"
+      ],
+      "approved_leaves": []
+    }
+  ]
+}

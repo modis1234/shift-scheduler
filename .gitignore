@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+algorithm-engine/output.json
+
+# OpenRig·에이전트 런타임이 실행 시 생성하는 파일
+.agents/
+.claude/
+.codex/
+.openrig/

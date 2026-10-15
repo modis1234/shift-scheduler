@@ -1,0 +1,48 @@
+version: "0.2"
+name: ai-scheduler-team
+summary: 멀티 산업군 AI 스케줄러 개발 팀 (Claude Code & Codex 협업)
+permission_policy: builtin:auto
+
+pods:
+  - id: dev
+    label: AI Scheduler
+    members:
+      - id: lead
+        label: Lead Architect
+        agent_ref: "local:agents/lead-architect"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+      - id: algo
+        label: Algorithm Engineer
+        agent_ref: "local:agents/algorithm-engineer"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+      - id: review
+        label: Code Reviewer
+        agent_ref: "local:agents/code-reviewer"
+        runtime: codex
+        profile: default
+        cwd: "."
+      - id: deploy
+        label: Deployer
+        agent_ref: "local:agents/deployer"
+        runtime: claude-code
+        profile: default
+        cwd: "."
+    edges:
+      - kind: delegates_to
+        from: lead
+        to: algo
+      - kind: delegates_to
+        from: lead
+        to: review
+      - kind: delegates_to
+        from: algo
+        to: review
+      - kind: delegates_to
+        from: lead
+        to: deploy
+
+edges: []
