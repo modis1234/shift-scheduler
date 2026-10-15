@@ -15,7 +15,7 @@ DEFAULT_RULES = {
     "max_weekly_hours": 52,
     "min_rest_hours": 11,
     "max_consecutive_days": 5,
-    "undesirable_shifts": ["Closing", "Night"],
+    "undesirable_shifts": ["Closing", "Night", "마감"],
     "default_hourly_wage": 10320,
     "time_limit_seconds": 30,
 }
@@ -369,6 +369,10 @@ def solve(data):
                 schedules.append({"date": d.isoformat(), "shift": s, "assigned_employees": assigned})
 
     warnings = [] if status == cp_model.OPTIMAL else ["시간 제한 내 최적해 미확정 — 실행 가능한 최선 해를 반환했습니다."]
+    # 기피 근무조가 하나도 맞지 않으면 균등화가 조용히 꺼지므로 알림 (일부 일치·빈 목록은 의도로 보고 경고 안 함, 점수 감점 없음)
+    if rules["undesirable_shifts"] and not undesirable:
+        warnings.append(f"기피 근무조로 지정한 이름({', '.join(rules['undesirable_shifts'])})이 등록된 근무조와 일치하지 않아 "
+                        "기피 근무 균등 배분을 적용하지 않았습니다.")
     penalty = 0
     for name, sp in spreads:
         v = solver.value(sp)

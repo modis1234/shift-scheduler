@@ -9,7 +9,7 @@ assert out["summary"]["legal_violations"] == 0, validate(data, out)
 assert not any(a["employee_id"] == "E01" for r in out["schedules"] if r["date"] == "2026-11-10" for a in r["assigned_employees"])
 
 # 검증기 자체가 위반을 잡는지: 휴가일(E01, 11/10)에 강제 배정
-out["schedules"].append({"date": "2026-11-10", "shift": "Peak_PartTime", "assigned_employees": [{"employee_id": "E01"}]})
+out["schedules"].append({"date": "2026-11-10", "shift": "피크", "assigned_employees": [{"employee_id": "E01"}]})
 assert validate(data, out), "validator missed a leave violation"
 print("ok", out["fairness_score"], out["summary"])
 
@@ -18,7 +18,7 @@ rot = {**data, "rules": {**data["rules"], "rotation_pattern": {"work_days": 2, "
 out = solve(rot)
 assert out["status"] == "SUCCESS", out["warnings_and_exceptions"]
 assert out["summary"]["legal_violations"] == 0, validate(rot, out)
-row = next(r for r in out["schedules"] if r["date"] == "2026-11-02" and r["shift"] == "Opening")
+row = next(r for r in out["schedules"] if r["date"] == "2026-11-02" and r["shift"] == "오픈")
 row["assigned_employees"] = [a for a in row["assigned_employees"] if a["employee_id"] != row["assigned_employees"][0]["employee_id"]]
 assert any("순환 패턴" in v for v in validate(rot, out)), "validator missed a rotation violation"
 bad = {**data, "rules": {**data["rules"], "rotation_pattern": {"work_days": 6, "off_days": 1}}}
@@ -68,13 +68,13 @@ for bad_map in ({"A": True}, {"A": 1, "GHOST": 0}):  # bool 값, 미등록 키
 for k in (6, -1, True, 2.0):
     one["employees"][0]["prior_consecutive_work_days"] = k
     assert solve(one)["status"] == "INVALID_INPUT", k
-# 기간 경계 휴식: 전날 Closing 24:00 종료 → 첫날 Opening 08:00(8h < 11h) 금지, Middle 12:00(12h)은 허용
+# 기간 경계 휴식: 전날 마감 24:00 종료 → 첫날 오픈 08:00(8h < 11h) 금지, 미들 12:00(12h)은 허용
 rest = {"schedule_period": {"start_date": "2026-11-01", "end_date": "2026-11-02"}, "rules": {},
-        "shift_definitions": {k: data["shift_definitions"][k] for k in ("Opening", "Middle")},
-        "shift_requirements": {"Opening": {"min_count": 1}},
+        "shift_definitions": {k: data["shift_definitions"][k] for k in ("오픈", "미들")},
+        "shift_requirements": {"오픈": {"min_count": 1}},
         "employees": [{"id": "A", "name": "a", "prior_last_shift_end": "2026-11-01T00:00"}, {"id": "B", "name": "b"}]}
 out6 = solve(rest)
-first = next(r for r in out6["schedules"] if r["date"] == "2026-11-01" and r["shift"] == "Opening")
+first = next(r for r in out6["schedules"] if r["date"] == "2026-11-01" and r["shift"] == "오픈")
 assert out6["status"] == "SUCCESS" and [a["employee_id"] for a in first["assigned_employees"]] == ["B"], out6
 assert out6["summary"]["legal_violations"] == 0
 first["assigned_employees"] = [{"employee_id": "A"}]  # 경계 휴식 위반 강제
@@ -83,7 +83,7 @@ out7 = solve(rest)
 out7["last_shift_end"]["B"] = "2026-11-01T00:00"  # 다음 기간으로 넘길 값 변조
 assert validate(rest, out7), "validator missed a tampered last_shift_end"
 rest["employees"] = rest["employees"][:1] + [{"id": "B", "name": "b", "approved_leaves": ["2026-11-01", "2026-11-02"]}]
-out8 = solve(rest)  # A 혼자: 11/1 Opening 불가 → INFEASIBLE, 휴가 중 B는 입력 prior(없음) → null
+out8 = solve(rest)  # A 혼자: 11/1 오픈 불가 → INFEASIBLE, 휴가 중 B는 입력 prior(없음) → null
 assert out8["status"] == "INFEASIBLE", out8
 rest["shift_requirements"] = {}
 out8 = solve(rest)
@@ -129,7 +129,7 @@ for bad in ([], "x", {}, broken(employees="x"), broken(schedule_period={"start_d
             broken(shift_requirements={"Night": {"min_count": 1}}), broken(employees=[{"id": "A"}]),
             broken(employees=[{"id": "A", "name": "a"}, {"id": "A", "name": "b"}]),
             broken(employees=[{"id": "A", "name": "a", "preferences": {"preferred_shift": "Night"}}]),
-            broken(employees=[{"id": "A", "name": "a", "preferences": {"preferred_shift": ["Opening"]}}]),
+            broken(employees=[{"id": "A", "name": "a", "preferences": {"preferred_shift": ["오픈"]}}]),
             broken(employees=[{"id": "A", "name": "a", "available_time_slots": ["11-15"]}])):
     assert solve(bad)["status"] == "INVALID_INPUT", bad if not isinstance(bad, dict) else {k: bad[k] for k in bad if k != "employees"}
 
@@ -137,11 +137,11 @@ for bad in ([], "x", {}, broken(employees="x"), broken(schedule_period={"start_d
 def with_rules(**kw):
     return broken(rules={**data["rules"], **kw})
 def with_shift(**kw):
-    return broken(shift_definitions={**data["shift_definitions"], "Opening": {**data["shift_definitions"]["Opening"], **kw}})
+    return broken(shift_definitions={**data["shift_definitions"], "오픈": {**data["shift_definitions"]["오픈"], **kw}})
 for bad in (with_rules(default_hourly_wage=1e308), with_rules(default_hourly_wage=float("inf")),
             with_rules(min_rest_hours=float("nan")), with_rules(max_weekly_hours=2 ** 63), with_rules(time_limit_seconds=101),
             with_rules(rotation_pattern={"work_days": 2, "off_days": 10 ** 9}), with_shift(hours=2 ** 63), with_shift(hours=25),
-            broken(shift_requirements={**data["shift_requirements"], "Opening": {"min_count": 2 ** 63}}),
+            broken(shift_requirements={**data["shift_requirements"], "오픈": {"min_count": 2 ** 63}}),
             broken(schedule_period={"start_date": "2026-01-01", "end_date": "2027-01-02"}),
             broken(employees=[{**data["employees"][0], "hourly_wage": 1e308}]),
             broken(employees=[{**data["employees"][0], "employment_type": float("inf")}]),
@@ -150,4 +150,15 @@ for bad in (with_rules(default_hourly_wage=1e308), with_rules(default_hourly_wag
     res = solve(bad)
     assert res["status"] == "INVALID_INPUT", res["warnings_and_exceptions"]
     json.dumps(res, allow_nan=False)
+# 기피 근무조 기본값·경고: 키 생략 시 기본값의 '마감'으로 균등화 적용, 불일치 명시 목록은 경고 1건, []는 경고 없음
+def und_rules(v):
+    r = {k: w for k, w in data["rules"].items() if k != "undesirable_shifts"}
+    return {**data, "rules": r if v is None else {**r, "undesirable_shifts": v}}
+res = solve(und_rules(None))
+assert any("기피 시프트 균등 분배" in a["assignment_reason"] for r in res["schedules"] for a in r["assigned_employees"])
+assert not any("기피 근무조" in w for w in res["warnings_and_exceptions"]), res["warnings_and_exceptions"]
+res = solve(und_rules(["야간"]))
+assert sum("기피 근무조" in w for w in res["warnings_and_exceptions"]) == 1, res["warnings_and_exceptions"]
+assert res["fairness_score"] == 100 or any("편차" in w for w in res["warnings_and_exceptions"])  # 새 경고는 감점 대상 아님
+assert not any("기피 근무조" in w for w in solve(und_rules([]))["warnings_and_exceptions"])
 print("ok rotation", out["fairness_score"], out["summary"])
