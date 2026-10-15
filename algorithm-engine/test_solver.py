@@ -120,4 +120,34 @@ assert solve(mon)["status"] == "SUCCESS"
 for h in (53, -1, True, 8.0, "8"):
     week["employees"][0]["prior_week_hours"] = h
     assert solve(week)["status"] == "INVALID_INPUT", h
+# 형태가 잘못된 입력: 예외 없이 INVALID_INPUT
+def broken(**kw):
+    return {**data, **kw}
+for bad in ([], "x", {}, broken(employees="x"), broken(schedule_period={"start_date": "2026-11-30", "end_date": "2026-11-01"}),
+            broken(schedule_period={"start_date": "2026/11/01", "end_date": "2026-11-30"}), broken(rules="x"),
+            broken(rules={"max_consecutive_days": "5"}), broken(shift_definitions={"D": {"start": "8", "end": "16:00", "hours": 8}}),
+            broken(shift_requirements={"Night": {"min_count": 1}}), broken(employees=[{"id": "A"}]),
+            broken(employees=[{"id": "A", "name": "a"}, {"id": "A", "name": "b"}]),
+            broken(employees=[{"id": "A", "name": "a", "preferences": {"preferred_shift": "Night"}}]),
+            broken(employees=[{"id": "A", "name": "a", "preferences": {"preferred_shift": ["Opening"]}}]),
+            broken(employees=[{"id": "A", "name": "a", "available_time_slots": ["11-15"]}])):
+    assert solve(bad)["status"] == "INVALID_INPUT", bad if not isinstance(bad, dict) else {k: bad[k] for k in bad if k != "employees"}
+
+# 숫자 상한·유한성: 거대값·Infinity·NaN이 예외나 비표준 JSON 대신 INVALID_INPUT
+def with_rules(**kw):
+    return broken(rules={**data["rules"], **kw})
+def with_shift(**kw):
+    return broken(shift_definitions={**data["shift_definitions"], "Opening": {**data["shift_definitions"]["Opening"], **kw}})
+for bad in (with_rules(default_hourly_wage=1e308), with_rules(default_hourly_wage=float("inf")),
+            with_rules(min_rest_hours=float("nan")), with_rules(max_weekly_hours=2 ** 63), with_rules(time_limit_seconds=101),
+            with_rules(rotation_pattern={"work_days": 2, "off_days": 10 ** 9}), with_shift(hours=2 ** 63), with_shift(hours=25),
+            broken(shift_requirements={**data["shift_requirements"], "Opening": {"min_count": 2 ** 63}}),
+            broken(schedule_period={"start_date": "2026-01-01", "end_date": "2027-01-02"}),
+            broken(employees=[{**data["employees"][0], "hourly_wage": 1e308}]),
+            broken(employees=[{**data["employees"][0], "employment_type": float("inf")}]),
+            with_rules(default_hourly_wage=10 ** 1000), with_rules(min_rest_hours=10 ** 1000),
+            broken(employees=[{**data["employees"][0], "hourly_wage": 10 ** 1000}])):
+    res = solve(bad)
+    assert res["status"] == "INVALID_INPUT", res["warnings_and_exceptions"]
+    json.dumps(res, allow_nan=False)
 print("ok rotation", out["fairness_score"], out["summary"])
