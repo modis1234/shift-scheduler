@@ -1,6 +1,7 @@
 "use client";
 
 import React, { memo, useCallback, useMemo, useState } from "react";
+import InputForm, { validateInput } from "./InputForm";
 
 interface IEmployee {
   id: string;
@@ -195,7 +196,9 @@ interface IScheduleRunnerProps {
 }
 
 const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
+  // 폼과 JSON 탭은 text 하나를 공유한다. 폼은 text가 파싱될 때만 그 값을 보여 준다
   const [text, setText] = useState(initialInput);
+  const [mode, setMode] = useState<"form" | "json">("form");
   const [inputError, setInputError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -204,6 +207,17 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
   const [run, setRun] = useState<{ input: IEngineInput; result: IEngineResult } | null>(null);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value), []);
+  const handleFormChange = useCallback((next: Record<string, unknown>) => setText(JSON.stringify(next, null, 2)), []);
+
+  const parsed = useMemo(() => {
+    try {
+      const v: unknown = JSON.parse(text);
+      return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }, [text]);
+  const validationErrors = useMemo(() => (parsed ? validateInput(parsed) : []), [parsed]);
 
   const handleGenerate = useCallback(async () => {
     let input: unknown;
@@ -217,6 +231,10 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       setInputError("입력은 JSON 객체여야 합니다.");
       return;
     }
+    if (validateInput(input as Record<string, unknown>).length > 0) {
+      setInputError("입력 오류를 먼저 고치세요.");
+      return;
+    }
     setInputError(null);
     setRequestError(null);
     setNotice(null);
@@ -226,7 +244,8 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       const res = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: text,
+        // 검증한 값을 다시 직렬화해 보낸다. 원문의 8.0 같은 표기는 JS에선 정수지만 엔진(Python)에선 float라 거부되기 때문
+        body: JSON.stringify(input),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -260,19 +279,62 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
 
   return (
     <div className="space-y-6">
-      <section className="space-y-2">
-        <label htmlFor="engine-input" className="block text-sm font-semibold">
-          엔진 입력 (JSON)
-        </label>
-        <textarea
-          id="engine-input"
-          value={text}
-          onChange={handleChange}
-          spellCheck={false}
-          aria-invalid={!!inputError}
-          aria-describedby={inputError ? "input-error" : undefined}
-          className="block w-full h-[28rem] rounded border border-foreground/20 bg-background p-3 font-mono text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-sm font-semibold">엔진 입력</h2>
+          <div className="inline-flex overflow-hidden rounded border border-foreground/20 text-sm">
+            {(
+              [
+                ["form", "폼"],
+                ["json", "JSON 직접 편집"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1 ${mode === m ? "bg-sky-600 text-white" : "hover:bg-foreground/5"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {mode === "form" ? (
+          parsed ? (
+            <InputForm value={parsed} onChange={handleFormChange} />
+          ) : (
+            <p role="alert" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+              JSON이 올바른 객체가 아니어서 폼을 표시할 수 없습니다. [JSON 직접 편집]에서 고치세요.
+            </p>
+          )
+        ) : (
+          <>
+            <label htmlFor="engine-input" className="sr-only">
+              엔진 입력 (JSON)
+            </label>
+            <textarea
+              id="engine-input"
+              value={text}
+              onChange={handleChange}
+              spellCheck={false}
+              aria-invalid={!!inputError}
+              aria-describedby={inputError ? "input-error" : undefined}
+              className="block w-full h-[28rem] rounded border border-foreground/20 bg-background p-3 font-mono text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </>
+        )}
+        {validationErrors.length > 0 && (
+          <div className="rounded border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            <p className="font-semibold">입력 확인 필요 ({validationErrors.length}건)</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {validationErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
