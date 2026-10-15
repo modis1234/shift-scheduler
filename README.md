@@ -31,6 +31,9 @@ npm install
 npm run dev   # http://localhost:3000
 ```
 
+화면의 [근무표 생성]은 `POST /api/schedule`이 엔진(`solver.py`)을 직접 실행해 결과를 돌려준다(120초 초과 시 504). 엔진 위치는 환경변수
+`ENGINE_DIR`(기본 `../algorithm-engine`), python은 `ENGINE_PYTHON`(기본 `$ENGINE_DIR/.venv/bin/python`)으로 바꿀 수 있으므로 위 algorithm-engine venv를 먼저 만들어 둔다.
+
 ## 엔진 규칙 매핑
 
 | 규칙 | 구현 |
