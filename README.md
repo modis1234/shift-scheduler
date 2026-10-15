@@ -34,6 +34,21 @@ npm run dev   # http://localhost:3000
 화면의 [근무표 생성]은 `POST /api/schedule`이 엔진(`solver.py`)을 직접 실행해 결과를 돌려준다(120초 초과 시 504). 엔진 위치는 환경변수
 `ENGINE_DIR`(기본 `../algorithm-engine`), python은 `ENGINE_PYTHON`(기본 `$ENGINE_DIR/.venv/bin/python`)으로 바꿀 수 있으므로 위 algorithm-engine venv를 먼저 만들어 둔다.
 
+## 배포 (Docker)
+
+`/api/schedule`이 같은 호스트에서 `solver.py`를 실행하므로 Next.js와 엔진을 이미지 하나에 담는다(루트 `Dockerfile`, multi-stage, `node` 사용자로 실행).
+태그는 git 커밋 short 해시이고, 같은 값이 label `org.opencontainers.image.revision`에 붙는다. 작업 트리가 dirty일 수 있으므로 커밋된 소스에서 빌드한다.
+
+```bash
+REV=$(git rev-parse --short HEAD)
+SRC=$(mktemp -d) && git archive HEAD | tar -x -C "$SRC"
+docker build --build-arg GIT_REVISION=$REV -t shift-scheduler:$REV "$SRC"
+docker run -d --name shift-scheduler -p 3000:3000 shift-scheduler:$REV
+```
+
+배포 후 확인: `GET /` 200, `POST /api/schedule`에 `algorithm-engine/sample_input.json` → 200 `SUCCESS`, `'{bad'` → 400.
+롤백은 이전 커밋 태그 이미지로 컨테이너를 다시 띄운다. 배포 호스트·레지스트리는 아직 정하지 않았다.
+
 ## 엔진 규칙 매핑
 
 | 규칙 | 구현 |
