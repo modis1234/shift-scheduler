@@ -2,6 +2,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InputForm, { formatDate, validateInput } from "./InputForm";
+import ScheduleCalendar from "./ScheduleCalendar";
 
 interface IEmployee {
   id: string;
@@ -11,7 +12,7 @@ interface IEmployee {
   [key: string]: unknown;
 }
 
-interface IEngineInput {
+export interface IEngineInput {
   schedule_period: { start_date: string; end_date: string };
   rules?: { rotation_pattern?: { work_days: number; off_days: number }; [key: string]: unknown };
   shift_definitions?: Record<string, { hours?: number }>;
@@ -27,7 +28,7 @@ interface IAssigned {
   rotation_offset?: number;
 }
 
-interface IEngineResult {
+export interface IEngineResult {
   status: string;
   fairness_score: number;
   summary: { total_shifts_assigned: number; legal_violations: number; estimated_labor_cost: number };
@@ -98,6 +99,13 @@ export function buildNextInput(input: IEngineInput, result: IEngineResult): IEng
   return next;
 }
 
+/** 근무조 정의 순서대로 팔레트 색을 준다(결과에만 있는 이름은 뒤에). 직원별 표와 달력이 같은 색을 쓰도록 한 곳에 둔다 */
+const makeColorOf = (input: IEngineInput, result: IEngineResult) => {
+  const names = Object.keys(input.shift_definitions ?? {});
+  for (const s of result.schedules) if (!names.includes(s.shift)) names.push(s.shift);
+  return (shift: string) => SHIFT_COLORS[names.indexOf(shift) % SHIFT_COLORS.length];
+};
+
 interface IScheduleGridProps {
   input: IEngineInput;
   result: IEngineResult;
@@ -109,11 +117,7 @@ const ScheduleGrid = memo<IScheduleGridProps>(({ input, result }) => {
     [input.schedule_period],
   );
 
-  const colorOf = useMemo(() => {
-    const names = Object.keys(input.shift_definitions ?? {});
-    for (const s of result.schedules) if (!names.includes(s.shift)) names.push(s.shift);
-    return (shift: string) => SHIFT_COLORS[names.indexOf(shift) % SHIFT_COLORS.length];
-  }, [input.shift_definitions, result.schedules]);
+  const colorOf = useMemo(() => makeColorOf(input, result), [input, result]);
 
   const cells = useMemo(() => {
     const m = new Map<string, { shift: string; reason: string }[]>();
@@ -266,6 +270,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
   const [restored, setRestored] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutDialogRef = useRef<HTMLDialogElement>(null);
+  const [resultView, setResultView] = useState<"grid" | "calendar">("grid");
   // 생성·다음 기간 준비 뒤 포커스가 사라지지 않게 결과(또는 오류)·안내 문구로 옮긴다
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const requestErrorRef = useRef<HTMLParagraphElement>(null);
@@ -418,10 +423,12 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     () => !!run && Array.isArray(run.input.employees) && !!run.input.schedule_period?.start_date && !!run.input.schedule_period?.end_date,
     [run],
   );
+  const hasGrid = !!result && result.schedules?.length > 0 && canShowGrid;
+  const runColorOf = useMemo(() => (run ? makeColorOf(run.input, run.result) : null), [run]);
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur print:hidden">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3 sm:px-8">
           <div>
             <h1 className="text-lg font-bold tracking-tight">교대근무 스케줄러</h1>
@@ -473,8 +480,8 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       </dialog>
 
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-        {restored && <p className="alert alert-info">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
-        <section aria-labelledby="step-input" className="card">
+        {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
+        <section aria-labelledby="step-input" className="card print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <h2 id="step-input" className="flex items-center gap-2 text-base font-semibold">
               <StepNumber n={1} />
@@ -523,7 +530,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         </section>
 
         {/* 입력이 길어서 넓은 화면에서는 생성 버튼을 화면 아래에 붙여 둔다. 모바일은 바가 입력을 가리므로 붙이지 않는다 */}
-        <section aria-labelledby="step-generate" className="card z-20 sm:sticky sm:bottom-4">
+        <section aria-labelledby="step-generate" className="card z-20 sm:sticky sm:bottom-4 print:hidden">
           <div className="flex flex-wrap items-center gap-3 px-5 py-3">
             <h2 id="step-generate" className="sr-only">근무표 만들기</h2>
             <StepNumber n={2} />
@@ -572,13 +579,29 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
           )}
           {result && statusView && (
             <div className="card space-y-5 p-5">
-              <h2 id="step-result" ref={resultHeadingRef} tabIndex={-1} className="flex items-center gap-2 text-base font-semibold">
-                <StepNumber n={3} />
-                결과
-              </h2>
-              {statusView.hint && <p className={`alert ${statusView.badge === "badge-warning" ? "alert-warning" : "alert-danger"}`}>{statusView.hint}</p>}
+              <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+                <h2 id="step-result" ref={resultHeadingRef} tabIndex={-1} className="flex items-center gap-2 text-base font-semibold">
+                  <StepNumber n={3} />
+                  결과
+                </h2>
+                {hasGrid && (
+                  <div className="flex gap-1" role="group" aria-label="결과 보기">
+                    {(
+                      [
+                        ["grid", "직원별 표"],
+                        ["calendar", "달력"],
+                      ] as const
+                    ).map(([v, label]) => (
+                      <button key={v} type="button" aria-pressed={resultView === v} onClick={() => setResultView(v)} className={`btn btn-sm ${resultView === v ? "btn-primary" : "btn-secondary"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {statusView.hint && <p className={`alert print:hidden ${statusView.badge === "badge-warning" ? "alert-warning" : "alert-danger"}`}>{statusView.hint}</p>}
               {/* 근무표가 없으면(SUCCESS 아님) 지표는 '-'. '위반 0건'이 문제없음으로 읽히지 않게 */}
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 print:hidden">
                 {(
                   [
                     ["상태", <span key="s" className={`badge ${statusView.badge}`}>{statusView.label}</span>],
@@ -604,7 +627,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
               </dl>
               {/* INFEASIBLE 엔진 알림은 위 안내 상자와 같은 내용이라 숨긴다 */}
               {result.status !== "INFEASIBLE" && result.warnings_and_exceptions?.length > 0 && (
-                <div className="alert alert-warning">
+                <div className="alert alert-warning print:hidden">
                   <h3 className="font-semibold">알림</h3>
                   <ul className="mt-1 list-disc space-y-1 pl-5">
                     {result.warnings_and_exceptions.map((w, i) => (
@@ -613,7 +636,10 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                   </ul>
                 </div>
               )}
-              {result.schedules?.length > 0 && canShowGrid && run && <ScheduleGrid input={run.input} result={result} />}
+              {hasGrid && run && resultView === "grid" && <ScheduleGrid input={run.input} result={result} />}
+              {hasGrid && run && resultView === "calendar" && (
+                <ScheduleCalendar input={run.input} result={result} colorOf={runColorOf!} storeName={storeName} periodLabel={periodLabel} />
+              )}
             </div>
           )}
         </section>

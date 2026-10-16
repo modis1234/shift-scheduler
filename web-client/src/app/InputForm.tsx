@@ -27,7 +27,7 @@ const LEVELS = [
   ["Senior", "숙련"],
   ["Junior", "일반"],
 ] as const;
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+export const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 const RULE_FIELDS = [
   { key: "max_weekly_hours", label: "주당 최대 근로시간", unit: "시간", max: MAX_WEEK_HOURS, min: 0, int: true, placeholder: "52" },
@@ -75,7 +75,7 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => typeof v === 
 const isNum = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isFinite(v) && lo <= v && v <= hi;
 const isHhmm = (v: unknown) => typeof v === "string" && /^\d{2}:\d{2}$/.test(v) && Number(v.slice(0, 2)) <= 24 && Number(v.slice(3)) < 60;
 const isSlot = (v: unknown) => typeof v === "string" && v.split("-").length === 2 && v.split("-").every(isHhmm);
-const toUtc = (d: string) => Date.parse(`${d}T00:00:00Z`);
+export const toUtc = (d: string) => Date.parse(`${d}T00:00:00Z`);
 const fmtNum = (n: number) => n.toLocaleString("ko-KR");
 
 /** "2026-11-01" → "11월 1일 (일)". 형식이 아니면 원문 그대로 */
