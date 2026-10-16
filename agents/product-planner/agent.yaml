@@ -1,0 +1,31 @@
+name: product-planner
+version: "1.0"
+description: 서비스 기획(요구사항·사용자 흐름·화면 기획서·정책 정의)
+
+defaults:
+  runtime: claude-code
+
+# OpenRig 공용 리소스(openrig-core 등). 전역 설치 경로라 머신마다 다를 수 있음: npm root -g 기준으로 수정
+imports:
+  - ref: path:/home/dhlee2/.nvm/versions/node/v22.22.3/lib/node_modules/@openrig/cli/daemon/specs/agents/shared
+
+profiles:
+  default:
+    uses:
+      skills: [development-team, verification-before-completion]
+      guidance: []
+      subagents: []
+      plugins: [shared:openrig-core]
+      runtime_resources: [shared:claude-default-settings, shared:claude-default-mcp, shared:codex-default-config, shared:claude-activity-hooks]
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      delivery_hint: send_text
+      required: true
+  actions: []

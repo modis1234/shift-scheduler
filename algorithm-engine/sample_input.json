@@ -9,29 +9,28 @@
     "min_rest_hours": 11,
     "max_consecutive_days": 5,
     "undesirable_shifts": [
-      "Closing",
-      "Night"
+      "마감"
     ],
     "default_hourly_wage": 10320,
     "time_limit_seconds": 30
   },
   "shift_definitions": {
-    "Opening": {
+    "오픈": {
       "start": "08:00",
       "end": "16:00",
       "hours": 8
     },
-    "Middle": {
+    "미들": {
       "start": "12:00",
       "end": "20:00",
       "hours": 8
     },
-    "Closing": {
+    "마감": {
       "start": "16:00",
       "end": "24:00",
       "hours": 8
     },
-    "Peak_PartTime": {
+    "피크": {
       "start": "11:00",
       "end": "15:00",
       "hours": 4
@@ -43,19 +42,19 @@
     }
   },
   "shift_requirements": {
-    "Opening": {
+    "오픈": {
       "min_count": 2,
       "min_senior": 1
     },
-    "Middle": {
+    "미들": {
       "min_count": 2,
       "min_senior": 1
     },
-    "Closing": {
+    "마감": {
       "min_count": 2,
       "min_senior": 1
     },
-    "Peak_PartTime": {
+    "피크": {
       "min_count": 1,
       "min_senior": 0
     }
@@ -70,7 +69,7 @@
         "2026-11-10"
       ],
       "preferences": {
-        "preferred_shift": "Opening"
+        "preferred_shift": "오픈"
       }
     },
     {

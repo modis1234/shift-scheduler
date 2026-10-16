@@ -57,7 +57,7 @@ docker run -d --name shift-scheduler -p 3000:3000 shift-scheduler:$REV
 | 규칙 | 구현 |
 |---|---|
 | Hard 1 주당 최대 근로시간 | ISO 주 단위로 `min(rules.max_weekly_hours, 직원 max_weekly_hours)` 이하. `employees[].prior_week_hours`(선택, 기본 0)를 첫 주 합계에 더해 기간 경계 주도 검사 |
-| Hard 2 최소 휴식 | 전날 종료 ~ 다음날 시작 < `min_rest_hours` 조합 금지 (Closing→Opening 자동 차단). `employees[].prior_last_shift_end`(선택)로 직전 기간 마지막 근무 종료 시각부터 휴식이 부족한 시프트도 금지 |
+| Hard 2 최소 휴식 | 전날 종료 ~ 다음날 시작 < `min_rest_hours` 조합 금지 (마감→오픈 자동 차단). `employees[].prior_last_shift_end`(선택)로 직전 기간 마지막 근무 종료 시각부터 휴식이 부족한 시프트도 금지 |
 | Hard 3 연속 근무 | 임의 `max_consecutive_days+1`일 구간 근무일 ≤ 제한값. `employees[].prior_consecutive_work_days`(선택, 기본 0)로 직전 기간 연속 근무를 이어받아 기간 경계도 검사 |
 | Hard 4 휴가 보호 | `approved_leaves` 날짜 전 시프트 0 고정 |
 | Hard 5 인원·숙련도 | 시프트별 `min_count`, `min_senior` 하한 |
@@ -66,6 +66,7 @@ docker run -d --name shift-scheduler -p 3000:3000 shift-scheduler:$REV
 | Soft 3 파트타임 가용시간 | `available_time_slots` 밖 시프트 배정 금지 |
 
 `rules` 키(선택)로 기본값을 덮어쓸 수 있다: `max_weekly_hours`, `min_rest_hours`, `max_consecutive_days`, `undesirable_shifts`, `default_hourly_wage`, `time_limit_seconds`, `rotation_pattern`.
+`undesirable_shifts` 기본값은 `["Closing", "Night", "마감"]`이며, 적용되는 목록이 등록된 근무조와 하나도 맞지 않으면 `warnings_and_exceptions`에 경고를 남기고 기피 근무 균등 배분을 건너뛴다(일부만 맞거나 `[]`이면 경고 없음).
 
 입력 숫자 상한(모든 숫자는 유한값이어야 하며 `Infinity`·`NaN`은 거부, 범위를 넘으면 `INVALID_INPUT`):
 
