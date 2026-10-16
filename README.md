@@ -1,11 +1,23 @@
 # shift-scheduler
 
-교대근무 스케줄 자동 생성 SaaS 모노레포.
+교대근무 스케줄을 생성하고 저장·게시하는 매장 관리자용 SaaS 모노레포.
+
+## 현재 기능
+
+- 카카오 계정으로 매장 관리자 로그인(운영 담당자가 발급한 1회용 초대 링크로 최초 연결)
+- 입력 폼 또는 JSON으로 직원·근무조·필요 인원·휴가·근무 규칙 편집
+- Google OR-Tools CP-SAT 엔진으로 법정·운영 제약을 만족하는 근무표 생성
+- 직원별 표와 월·주·일 달력 보기, 직원·근무조 필터, A4 가로 인쇄/PDF 저장
+- 기간 경계의 연속 근무일·주간 근로시간·마지막 근무 종료·순환 위상을 다음 기간 입력으로 전달
+- 생성 결과를 SQLite에 저장하고 다시 열기·삭제·게시·게시 취소
+- 같은 매장·같은 기간에는 하나의 근무표만 게시(새 근무표를 게시하면 이전 게시본은 자동으로 게시 취소)
 
 ```
 shift-scheduler/
-├── web-client/          # Next.js 15 (App Router, TypeScript, Tailwind CSS)
-│   └── src/app/         # 라우트·페이지
+├── web-client/          # Next.js 15 (App Router, React 19, TypeScript, Tailwind CSS 4)
+│   ├── src/app/         # 입력·결과·달력 UI와 API 라우트
+│   ├── src/lib/         # 인증·계정·SQLite 근무표 저장소
+│   └── scripts/         # 매장 계정·초대 링크 관리
 └── algorithm-engine/    # Python 3 + Google OR-Tools (CP-SAT)
     ├── requirements.txt
     ├── solver.py        # 스케줄 생성 + 절대 규칙 재검증(validate)
@@ -13,9 +25,31 @@ shift-scheduler/
     └── test_solver.py   # 샘플 입력으로 SUCCESS / 위반 0건 확인
 ```
 
-## 실행
+## 로컬 실행
 
 `./dev.sh [포트]`: 엔진 venv와 web-client 의존성이 없으면 만들고 개발 서버를 띄운다(기본 3000). 아래는 각각 따로 실행하는 방법이다.
+
+Node.js 22 이상(`node:sqlite` 사용), Python 3, 카카오 애플리케이션 설정이 필요하다. 먼저 `web-client/.env.local`에 아래 환경변수를 설정한다.
+
+```dotenv
+KAKAO_REST_API_KEY=...
+KAKAO_CLIENT_SECRET=...
+KAKAO_REDIRECT_URI=http://localhost:3000/auth/kakao/callback
+KAKAO_LOGOUT_REDIRECT_URI=http://localhost:3000/login
+SESSION_SECRET=32자 이상의 임의 문자열
+ACCOUNTS_FILE=/절대/경로/accounts.json
+SCHEDULES_DB=/절대/경로/schedules.db
+```
+
+그다음 개발용 매장과 세션을 만들거나, 아래 [로그인](#로그인-카카오) 절차로 매장·초대 링크를 만든다.
+
+```bash
+cd web-client
+node --env-file=.env.local scripts/accounts.mjs dev-session
+# 출력된 Cookie 값을 브라우저 요청에 사용하거나 카카오 초대 로그인을 진행
+cd ..
+./dev.sh
+```
 
 ### algorithm-engine
 ```bash
@@ -37,6 +71,8 @@ npm run dev   # http://localhost:3000
 `ENGINE_DIR`(기본 `../algorithm-engine`), python은 `ENGINE_PYTHON`(기본 `$ENGINE_DIR/.venv/bin/python`)으로 바꿀 수 있으므로 위 algorithm-engine venv를 먼저 만들어 둔다.
 동시에 실행되는 엔진 수는 `ENGINE_MAX_CONCURRENCY`(1 이상 정수, 기본 2)로 제한하며, 넘는 요청은 기다리지 않고 429(`Retry-After: 30`)로 거절한다. 제한은 Node 프로세스 단위다.
 
+생성에 성공하면 직원별 표와 월·주·일 달력을 전환해 볼 수 있다. 달력은 직원·근무조로 필터링할 수 있고 [인쇄]는 월 보기를 A4 가로 형식으로 출력한다. [다음 기간 준비하기]는 결과의 기간 경계 값을 다음 입력으로 옮긴다.
+
 ### 로그인 (카카오)
 
 `/login`, `/auth/*`, `/api/invite`, 정적 파일을 뺀 모든 페이지·API는 로그인이 필요하다(기획: `docs/planning/login.md`). `web-client/.env.local`에
@@ -55,7 +91,22 @@ node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
 node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
 ```
 
-근무표 저장·게시(`/api/schedules`)는 Node 내장 SQLite(`node:sqlite`) 파일에 저장한다. 경로는 `SCHEDULES_DB`(기본값 없음, Docker에서는 볼륨, 직원 개인정보 포함)이고, 시작 시 나오는 `ExperimentalWarning: SQLite`는 정상이다. `accounts.mjs delete`는 그 매장의 근무표도 지운다.
+근무표 저장·게시(`/api/schedules`)는 Node 내장 SQLite(`node:sqlite`) 파일에 입력과 결과를 함께 저장한다. 경로는 `SCHEDULES_DB`(기본값 없음, Docker에서는 볼륨, 직원 개인정보 포함)이고, 시작 시 나오는 `ExperimentalWarning: SQLite`는 정상이다. 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `accounts.mjs delete`는 그 매장의 근무표도 함께 지운다.
+
+### 주요 API
+
+모든 API는 `/api/invite`를 제외하고 로그인 세션이 필요하며, 근무표 API는 현재 로그인한 매장의 데이터에만 접근한다.
+
+| 메서드·경로 | 기능 |
+|---|---|
+| `POST /api/schedule` | 엔진으로 근무표 생성 |
+| `GET /api/schedules` | 저장된 근무표 목록 조회 |
+| `POST /api/schedules` | `SUCCESS` 결과를 작성 중 상태로 저장 |
+| `GET /api/schedules/:id` | 저장된 입력·결과 조회 |
+| `POST /api/schedules/:id/publish` | 게시(같은 기간의 기존 게시본은 게시 취소) |
+| `POST /api/schedules/:id/unpublish` | 게시 취소 |
+| `DELETE /api/schedules/:id` | 저장된 근무표 삭제 |
+| `GET /api/me` | 현재 로그인한 매장 조회 |
 
 ## 배포 (Docker)
 
@@ -66,10 +117,18 @@ node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테�
 REV=$(git rev-parse --short HEAD)
 SRC=$(mktemp -d) && git archive HEAD | tar -x -C "$SRC"
 docker build --build-arg GIT_REVISION=$REV -t shift-scheduler:$REV "$SRC"
-docker run -d --name shift-scheduler -p 3000:3000 shift-scheduler:$REV
+docker volume create shift-scheduler-data
+docker run -d --name shift-scheduler -p 3000:3000 \
+  --env-file /절대/경로/production.env \
+  -e ACCOUNTS_FILE=/data/accounts.json \
+  -e SCHEDULES_DB=/data/schedules.db \
+  -v shift-scheduler-data:/data \
+  shift-scheduler:$REV
 ```
 
-배포 후 확인: `GET /` 200, `POST /api/schedule`에 `algorithm-engine/sample_input.json` → 200 `SUCCESS`, `'{bad'` → 400.
+`production.env`에는 카카오 관련 환경변수와 `SESSION_SECRET`을 둔다. `ACCOUNTS_FILE`과 `SCHEDULES_DB`에는 계정 식별자와 직원 근무 정보가 있으므로 컨테이너 밖의 영속 볼륨에 보관하고 백업·접근 권한을 관리한다.
+
+배포 후 확인: 비로그인 `GET /login` → 200, `GET /` → `/login` 리다이렉트, `POST /api/schedule` → 401. 카카오 로그인 후 세션 쿠키를 포함해 `POST /api/schedule`에 `algorithm-engine/sample_input.json` → 200 `SUCCESS`, `'{bad'` → 400.
 롤백은 이전 커밋 태그 이미지로 컨테이너를 다시 띄운다. 배포 호스트·레지스트리는 아직 정하지 않았다.
 
 ## 엔진 규칙 매핑
