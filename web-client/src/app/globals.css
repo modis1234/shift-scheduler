@@ -42,7 +42,8 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
+/* 다크 색은 화면에서만. 인쇄는 항상 라이트(흰 종이) */
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1116;
     --surface: #161b22;
@@ -249,4 +250,39 @@ input[type="checkbox"] {
   accent-color: var(--accent);
   width: 1rem;
   height: 1rem;
+}
+
+/* 인쇄: A4 가로 한 장. 화면 전용 요소는 각 컴포넌트에서 print:hidden */
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+@media print {
+  body {
+    background: #fff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  main {
+    max-width: none;
+    padding: 0;
+  }
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+  /* 월 달력을 A4 가로 한 장에: 칸 높이·글자를 줄인다.
+     ponytail: 근무조가 5개 넘거나 6주짜리 달이면 넘칠 수 있다. 그때는 근무조 줄을 '오픈2·미들2'처럼 한 줄로 합친다 */
+  .cal-month button {
+    min-height: 0;
+    padding: 2px 4px;
+  }
+  .cal-month button span {
+    font-size: 9px;
+    line-height: 13px;
+  }
+  .cal-month button > span + span {
+    margin-top: 1px;
+  }
 }
