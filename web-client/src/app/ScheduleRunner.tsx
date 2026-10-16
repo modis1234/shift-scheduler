@@ -65,6 +65,9 @@ const periodDates = (start: string, end: string): string[] => {
 };
 
 /** 결과의 기간 경계 carry 값으로 다음 기간 입력을 만든다. 결과에 없는 키는 건드리지 않는다. */
+// 로그인 시간이 지나 /login으로 갈 때 입력(JSON 텍스트)을 이 탭에 보관하는 키. 로그인 화면도 이 키로 '시간이 지남' 안내를 띄운다
+export const SAVED_INPUT_KEY = "shift-scheduler:saved-input";
+
 export function buildNextInput(input: IEngineInput, result: IEngineResult): IEngineInput {
   const next = structuredClone(input);
   const { start_date, end_date } = input.schedule_period;
@@ -259,6 +262,10 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
   // 생성이 막혔을 때 스크린리더에만 읽어 줄 세부 오류
   const [inputErrorDetail, setInputErrorDetail] = useState("");
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const [storeName, setStoreName] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const logoutDialogRef = useRef<HTMLDialogElement>(null);
   // 생성·다음 기간 준비 뒤 포커스가 사라지지 않게 결과(또는 오류)·안내 문구로 옮긴다
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const requestErrorRef = useRef<HTMLParagraphElement>(null);
@@ -306,6 +313,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     }
     setInputError(null);
     setInputErrorDetail("");
+    setRestored(false);
     setRequestError(null);
     setNotice(null);
     setRun(null);
@@ -317,6 +325,14 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         // 검증한 값을 다시 직렬화해 보낸다. 원문의 8.0 같은 표기는 JS에선 정수지만 엔진(Python)에선 float라 거부되기 때문
         body: JSON.stringify(input),
       });
+      if (res.status === 401) {
+        // 로그인 시간이 지남: 입력을 보관하고 로그인 화면으로. 다시 로그인하면 복원된다
+        try {
+          sessionStorage.setItem(SAVED_INPUT_KEY, text);
+        } catch {}
+        location.assign("/login?next=/");
+        return;
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setRequestError(requestErrorMessage(res.status, data?.error));
@@ -329,6 +345,39 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       setLoading(false);
     }
   }, [text]);
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then(async (r) => {
+        if (r.status === 401) location.assign("/login?next=/");
+        else if (r.ok) setStoreName(((await r.json()) as { storeName?: string }).storeName ?? null);
+      })
+      .catch(() => {});
+    // 로그인 시간이 지나 보관해 둔 입력이 있으면 한 번 복원하고 지운다
+    try {
+      const saved = sessionStorage.getItem(SAVED_INPUT_KEY);
+      if (saved !== null) {
+        sessionStorage.removeItem(SAVED_INPUT_KEY);
+        setText(saved);
+        setRestored(true);
+      }
+    } catch {}
+  }, []);
+
+  const doLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      const res = await fetch("/auth/logout", { method: "POST" });
+      const data = (await res.json().catch(() => null)) as { kakaoLogoutUrl?: string } | null;
+      if (!res.ok || !data?.kakaoLogoutUrl) throw new Error();
+      // 카카오 계정 로그아웃을 거쳐 /login?logged_out=1로 돌아온다
+      location.assign(data.kakaoLogoutUrl);
+    } catch {
+      logoutDialogRef.current?.close();
+      setLoggingOut(false);
+      setRequestError("로그아웃하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    }
+  }, []);
 
   const handleNextPeriod = useCallback(() => {
     if (!run) return;
@@ -378,14 +427,53 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
             <h1 className="text-lg font-bold tracking-tight">교대근무 스케줄러</h1>
             <p className="text-xs text-muted">근무 조건을 입력하면 근로시간·휴식 규칙을 지키는 근무표를 자동으로 만듭니다.</p>
           </div>
-          <p className="text-sm">
-            <span className="text-muted">근무 기간 </span>
-            <span className="font-semibold tabular-nums">{periodLabel}</span>
-          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="text-sm">
+              <span className="text-muted">근무 기간 </span>
+              <span className="font-semibold tabular-nums">{periodLabel}</span>
+            </p>
+            {storeName && (
+              <div className="flex items-center gap-3 sm:border-l sm:border-border sm:pl-4">
+                <span className="text-xs text-muted">{storeName}</span>
+                <button
+                  type="button"
+                  onClick={() => (success ? logoutDialogRef.current?.showModal() : void doLogout())}
+                  disabled={loggingOut}
+                  className="btn btn-secondary btn-sm"
+                >
+                  로그아웃
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
+      {/* 결과 근무표가 있을 때만 확인. 네이티브 dialog: 배경을 눌러도 닫히지 않고 Esc는 취소, 처음 포커스는 [취소] */}
+      <dialog
+        ref={logoutDialogRef}
+        aria-labelledby="logout-title"
+        aria-describedby="logout-desc"
+        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-5 text-fg backdrop:bg-black/40"
+      >
+        <h2 id="logout-title" className="text-base font-semibold">
+          로그아웃
+        </h2>
+        <p id="logout-desc" className="mt-2 text-sm">
+          로그아웃하면 화면의 근무표가 사라집니다. 카카오 계정에서도 로그아웃됩니다. 로그아웃할까요?
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => logoutDialogRef.current?.close()} className="btn btn-secondary">
+            취소
+          </button>
+          <button type="button" onClick={() => void doLogout()} disabled={loggingOut} className="btn btn-primary">
+            {loggingOut ? "로그아웃하는 중…" : "로그아웃"}
+          </button>
+        </div>
+      </dialog>
+
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
+        {restored && <p className="alert alert-info">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
         <section aria-labelledby="step-input" className="card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <h2 id="step-input" className="flex items-center gap-2 text-base font-semibold">
