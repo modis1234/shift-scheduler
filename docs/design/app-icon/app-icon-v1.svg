@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>교대근무 스케줄러</title>
+  <rect width="512" height="512" rx="112" fill="#2456cc"/>
+  <rect x="96" y="128" width="320" height="288" rx="44" fill="#ffffff"/>
+  <path d="M140 128h232a44 44 0 0 1 44 44v28H96v-28a44 44 0 0 1 44-44z" fill="#a9c1f5"/>
+  <rect x="164" y="92" width="36" height="76" rx="18" fill="#ffffff"/>
+  <rect x="312" y="92" width="36" height="76" rx="18" fill="#ffffff"/>
+  <g fill="none" stroke="#2456cc" stroke-width="26" stroke-linecap="round">
+    <path d="M188.4 281.9A70 70 0 0 1 309.6 255.0"/>
+    <path d="M323.6 318.1A70 70 0 0 1 202.4 345.0"/>
+  </g>
+  <g fill="#2456cc">
+    <path d="M329.3 278.4L332.6 235.7L286.6 274.3Z"/>
+    <path d="M182.7 321.6L179.4 364.3L225.4 325.7Z"/>
+  </g>
+</svg>
