@@ -61,6 +61,11 @@ export async function readSession(token: string | undefined): Promise<{ session:
   return { session, store };
 }
 
+/** 라우트 핸들러에서 세션의 매장. 없으면 null(→ 401). */
+export async function sessionStore(req: NextRequest): Promise<Store | null> {
+  return (await readSession(req.cookies.get(SESSION_COOKIE)?.value))?.store ?? null;
+}
+
 const cookieBase = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",

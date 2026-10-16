@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { readBody } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -20,26 +21,6 @@ const RETRY_AFTER_SECONDS = 30; // 엔진 기본 time_limit_seconds
 let running = 0;
 
 const error = (status: number, message: string) => Response.json({ error: message }, { status });
-
-/** 본문을 최대 limit 바이트까지만 읽는다. 넘으면 null (Content-Length 없는 chunked 요청도 막기 위해 스트림으로 센다). */
-async function readBody(req: Request, limit: number): Promise<string | null> {
-  if (Number(req.headers.get("content-length") ?? 0) > limit) return null;
-  if (!req.body) return "";
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > limit) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf-8");
-}
 
 type EngineRun = { kind: "ok"; stdout: string } | { kind: "timeout" } | { kind: "failed"; reason: string };
 

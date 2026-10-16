@@ -55,6 +55,8 @@ node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
 node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
 ```
 
+근무표 저장·게시(`/api/schedules`)는 Node 내장 SQLite(`node:sqlite`) 파일에 저장한다. 경로는 `SCHEDULES_DB`(기본값 없음, Docker에서는 볼륨, 직원 개인정보 포함)이고, 시작 시 나오는 `ExperimentalWarning: SQLite`는 정상이다. `accounts.mjs delete`는 그 매장의 근무표도 지운다.
+
 ## 배포 (Docker)
 
 `/api/schedule`이 같은 호스트에서 `solver.py`를 실행하므로 Next.js와 엔진을 이미지 하나에 담는다(루트 `Dockerfile`, multi-stage, `node` 사용자로 실행).
