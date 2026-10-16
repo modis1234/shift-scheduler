@@ -2,6 +2,7 @@
 // 운영 담당자용 계정 관리. 의존성 없음. web-client에서: node --env-file=.env.local scripts/accounts.mjs <명령>
 // 계정 파일 형식은 src/lib/accounts.ts와 같다. 서버가 같은 순간에 초대를 사용 처리하면 한쪽 변경이 사라질 수 있으니 사용이 적을 때 실행한다
 import { createHash, createHmac, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +14,7 @@ const USAGE = `사용법: node --env-file=.env.local scripts/accounts.mjs <명�
   list                   매장 목록
   revoke-invite <매장 id> 미사용 초대 링크 취소
   unlink <매장 id>       카카오 계정 연결 해제(그 관리자의 로그인도 즉시 끊김)
-  delete <매장 id>       매장 삭제
+  delete <매장 id>       매장과 그 매장의 근무표 삭제
   dev-session [매장 이름] 개발·테스트용 세션 쿠키 출력(NODE_ENV=production이면 거부)`;
 
 function fail(message) {
@@ -112,9 +113,23 @@ switch (cmd) {
   }
   case "delete": {
     const store = findStore(accounts, args[0]);
+    // 매장의 근무표(직원 개인정보)도 함께 지운다. DB 파일이 아직 없으면 지울 것도 없다
+    const db = process.env.SCHEDULES_DB?.replace(/^~\//, `${os.homedir()}/`);
+    let removed = 0;
+    if (db && existsSync(db)) {
+      const { DatabaseSync } = await import("node:sqlite");
+      const conn = new DatabaseSync(db);
+      // 서버가 아직 한 번도 열지 않은 DB면 테이블이 없다
+      if (conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schedules'").get()) {
+        removed = Number(conn.prepare("DELETE FROM schedules WHERE store_id = ?").run(store.id).changes);
+      }
+      conn.close();
+    } else if (!db) {
+      console.warn("SCHEDULES_DB가 없어 근무표는 지우지 않았습니다. 근무표가 있다면 SCHEDULES_DB를 설정하고 다시 실행하세요.");
+    }
     accounts.stores = accounts.stores.filter((s) => s !== store);
     await save(accounts);
-    console.log(`매장 ${store.id} "${store.name}"을(를) 삭제했습니다.`);
+    console.log(`매장 ${store.id} "${store.name}"과(와) 근무표 ${removed}개를 삭제했습니다.`);
     break;
   }
   case "dev-session": {

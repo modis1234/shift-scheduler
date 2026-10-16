@@ -3,6 +3,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InputForm, { formatDate, validateInput } from "./InputForm";
 import ScheduleCalendar from "./ScheduleCalendar";
+import SavedSchedules, { SAVED_STATUS_VIEW, type SavedStatus } from "./SavedSchedules";
 
 interface IEmployee {
   id: string;
@@ -271,6 +272,14 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutDialogRef = useRef<HTMLDialogElement>(null);
   const [resultView, setResultView] = useState<"grid" | "calendar">("grid");
+  // 화면의 결과가 저장된 근무표면 그 id·상태. 새로 만들거나 다음 기간을 준비하면 null(아직 저장 안 함)
+  const [saved, setSaved] = useState<{ id: string; status: SavedStatus } | null>(null);
+  const [listKey, setListKey] = useState(0);
+  const [saveMsg, setSaveMsg] = useState<{ kind: "info" | "danger"; text: string } | null>(null);
+  const [savingBusy, setSavingBusy] = useState(false);
+  // 게시·삭제 확인 대화상자
+  const [confirm, setConfirm] = useState<{ title: string; body: string; label: string; onConfirm: () => void } | null>(null);
+  const confirmRef = useRef<HTMLDialogElement>(null);
   // 생성·다음 기간 준비 뒤 포커스가 사라지지 않게 결과(또는 오류)·안내 문구로 옮긴다
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const requestErrorRef = useRef<HTMLParagraphElement>(null);
@@ -293,6 +302,17 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     }
   }, [text]);
   const validationErrors = useMemo(() => (parsed ? validateInput(parsed) : []), [parsed]);
+
+  // 로그인 시간이 지남(401): 입력을 보관하고 로그인 화면으로. 다시 로그인하면 복원된다.
+  // 입력은 ref로 읽어 이 함수가 입력마다 바뀌지 않게 한다(목록이 다시 불러와지지 않도록)
+  const textRef = useRef(text);
+  textRef.current = text;
+  const toLogin = useCallback(() => {
+    try {
+      sessionStorage.setItem(SAVED_INPUT_KEY, textRef.current);
+    } catch {}
+    location.assign("/login?next=/");
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     let input: unknown;
@@ -319,6 +339,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     setInputError(null);
     setInputErrorDetail("");
     setRestored(false);
+    setSaveMsg(null);
     setRequestError(null);
     setNotice(null);
     setRun(null);
@@ -330,26 +351,20 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         // 검증한 값을 다시 직렬화해 보낸다. 원문의 8.0 같은 표기는 JS에선 정수지만 엔진(Python)에선 float라 거부되기 때문
         body: JSON.stringify(input),
       });
-      if (res.status === 401) {
-        // 로그인 시간이 지남: 입력을 보관하고 로그인 화면으로. 다시 로그인하면 복원된다
-        try {
-          sessionStorage.setItem(SAVED_INPUT_KEY, text);
-        } catch {}
-        location.assign("/login?next=/");
-        return;
-      }
+      if (res.status === 401) return toLogin();
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setRequestError(requestErrorMessage(res.status, data?.error));
         return;
       }
       setRun({ input: input as IEngineInput, result: data as IEngineResult });
+      setSaved(null);
     } catch {
       setRequestError("서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
     } finally {
       setLoading(false);
     }
-  }, [text]);
+  }, [text, toLogin]);
 
   useEffect(() => {
     fetch("/api/me")
@@ -396,11 +411,101 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     }
   }, []);
 
+  /** 저장된 근무표 열기: 입력 폼과 결과(직원별 표/달력)를 채운다 */
+  const openSaved = useCallback(
+    async (id: string) => {
+      setSaveMsg(null);
+      try {
+        const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`);
+        if (res.status === 401) return toLogin();
+        if (!res.ok) throw new Error();
+        const data = (await res.json()) as { id: string; status: SavedStatus; input: IEngineInput; result: IEngineResult };
+        setText(JSON.stringify(data.input, null, 2));
+        setRun({ input: data.input, result: data.result });
+        setSaved({ id: data.id, status: data.status });
+        setNotice(null);
+        setRequestError(null);
+        setInputError(null);
+      } catch {
+        setSaveMsg({ kind: "danger", text: "근무표를 불러오지 못했습니다. 목록을 새로 고친 뒤 다시 시도해 주세요." });
+        setListKey((k) => k + 1);
+      }
+    },
+    [toLogin],
+  );
+
+  /** 저장·게시·게시 취소·삭제 요청. 성공하면 목록을 다시 불러온다 */
+  const callSaved = useCallback(
+    async (url: string, method: string, body: unknown, failText: string, onOk: (res: Response) => Promise<void> | void) => {
+      setSavingBusy(true);
+      setSaveMsg(null);
+      try {
+        const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+        if (res.status === 401) return toLogin();
+        if (!res.ok) throw new Error();
+        await onOk(res);
+        setListKey((k) => k + 1);
+      } catch {
+        setSaveMsg({ kind: "danger", text: failText });
+      } finally {
+        setSavingBusy(false);
+      }
+    },
+    [toLogin],
+  );
+
+  const handleSave = () =>
+    run &&
+    callSaved("/api/schedules", "POST", { input: run.input, result: run.result }, "근무표를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요. 화면의 근무표는 그대로 있습니다.", async (res) => {
+      const { id } = (await res.json()) as { id: string };
+      setSaved({ id, status: "draft" });
+      setSaveMsg({ kind: "info", text: "근무표를 저장했습니다." });
+    });
+
+  const handlePublish = () =>
+    saved &&
+    setConfirm({
+      title: "게시하기",
+      body: "게시하면 직원이 이 근무표를 볼 수 있습니다. 게시할까요?",
+      label: "게시하기",
+      onConfirm: () =>
+        callSaved(`/api/schedules/${encodeURIComponent(saved.id)}/publish`, "POST", null, "근무표를 게시하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", () => {
+          setSaved({ ...saved, status: "published" });
+          setSaveMsg({ kind: "info", text: "게시했습니다." });
+        }),
+    });
+
+  const handleUnpublish = () =>
+    saved &&
+    callSaved(`/api/schedules/${encodeURIComponent(saved.id)}/unpublish`, "POST", null, "게시를 취소하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", () => {
+      setSaved({ ...saved, status: "unpublished" });
+      setSaveMsg({ kind: "info", text: "게시를 취소했습니다." });
+    });
+
+  const handleDelete = () =>
+    saved &&
+    setConfirm({
+      title: "삭제",
+      body: "저장된 이 근무표를 삭제할까요? 삭제하면 되돌릴 수 없습니다. 화면의 근무표는 남아 있어 다시 저장할 수 있습니다.",
+      label: "삭제",
+      onConfirm: () =>
+        callSaved(`/api/schedules/${encodeURIComponent(saved.id)}`, "DELETE", null, "근무표를 삭제하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", () => {
+          setSaved(null);
+          setSaveMsg({ kind: "info", text: "저장된 근무표를 삭제했습니다." });
+        }),
+    });
+
+  useEffect(() => {
+    if (confirm) confirmRef.current?.showModal();
+  }, [confirm]);
+
   const handleNextPeriod = useCallback(() => {
     if (!run) return;
     const next = buildNextInput(run.input, run.result);
     setText(JSON.stringify(next, null, 2));
     setRun(null);
+    setSaved(null);
+    setSaveMsg(null);
     setNotice(
       `다음 기간(${formatDate(next.schedule_period.start_date)} ~ ${formatDate(next.schedule_period.end_date)}) 근무 조건을 준비했습니다. 직원 휴가를 확인한 뒤 [근무표 만들기]를 누르세요.`,
     );
@@ -469,6 +574,37 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         </div>
       </header>
 
+      {/* 게시·삭제 확인. 로그아웃 확인과 같은 규칙(배경 클릭 무시, Esc는 취소, 처음 포커스 [취소]) */}
+      <dialog
+        ref={confirmRef}
+        onClose={() => setConfirm(null)}
+        aria-labelledby="confirm-title"
+        aria-describedby="confirm-desc"
+        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-5 text-fg backdrop:bg-black/40"
+      >
+        <h2 id="confirm-title" className="text-base font-semibold">
+          {confirm?.title}
+        </h2>
+        <p id="confirm-desc" className="mt-2 text-sm">
+          {confirm?.body}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => confirmRef.current?.close()} className="btn btn-secondary">
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              confirm?.onConfirm();
+              confirmRef.current?.close();
+            }}
+            className="btn btn-primary"
+          >
+            {confirm?.label}
+          </button>
+        </div>
+      </dialog>
+
       {/* 결과 근무표가 있을 때만 확인. 네이티브 dialog: 배경을 눌러도 닫히지 않고 Esc는 취소, 처음 포커스는 [취소] */}
       <dialog
         ref={logoutDialogRef}
@@ -493,6 +629,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       </dialog>
 
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
+        <SavedSchedules refreshKey={listKey} currentId={saved?.id ?? null} onOpen={openSaved} onUnauthorized={toLogin} />
         {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
         <section aria-labelledby="step-input" className="card print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -606,8 +743,34 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                   <StepNumber n={3} />
                   결과
                 </h2>
+                {/* 배정이 하나도 없는 SUCCESS(필요 인원 0 등)도 저장·게시할 수 있게 그리드 유무와 따로 본다 */}
+                {success && run && (
+                  <div className="flex flex-wrap items-center gap-2" role="group" aria-label="근무표 저장·게시">
+                    {saved ? (
+                      <>
+                        <span className={`badge ${SAVED_STATUS_VIEW[saved.status].badge}`}>{SAVED_STATUS_VIEW[saved.status].label}</span>
+                        {saved.status === "published" ? (
+                          <button type="button" onClick={handleUnpublish} disabled={savingBusy} className="btn btn-secondary btn-sm">
+                            게시 취소
+                          </button>
+                        ) : (
+                          <button type="button" onClick={handlePublish} disabled={savingBusy} className="btn btn-secondary btn-sm">
+                            게시하기
+                          </button>
+                        )}
+                        <button type="button" onClick={handleDelete} disabled={savingBusy} className="btn btn-danger-ghost">
+                          삭제
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={handleSave} disabled={savingBusy} className="btn btn-secondary btn-sm">
+                        저장
+                      </button>
+                    )}
+                  </div>
+                )}
                 {hasGrid && (
-                  <div className="flex gap-1" role="group" aria-label="결과 보기">
+                  <div className="flex gap-1 sm:ml-auto" role="group" aria-label="결과 보기">
                     {(
                       [
                         ["grid", "직원별 표"],
@@ -621,6 +784,11 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                   </div>
                 )}
               </div>
+              {saveMsg && (
+                <p role={saveMsg.kind === "danger" ? "alert" : "status"} className={`alert alert-${saveMsg.kind} print:hidden`}>
+                  {saveMsg.text}
+                </p>
+              )}
               {statusView.hint && <p className={`alert print:hidden ${statusView.badge === "badge-warning" ? "alert-warning" : "alert-danger"}`}>{statusView.hint}</p>}
               {/* 근무표가 없으면(SUCCESS 아님) 지표는 '-'. '위반 0건'이 문제없음으로 읽히지 않게 */}
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 print:hidden">
