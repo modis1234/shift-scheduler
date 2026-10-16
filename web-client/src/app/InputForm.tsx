@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 
 // JSON 직접 편집에서 어떤 값이든 들어올 수 있으므로 폼은 느슨한 객체로 다루고, 읽을 때마다 타입을 확인한다
 type Obj = Record<string, unknown>;
@@ -103,83 +103,102 @@ const whoOf = (e: Obj, n: number) => {
   return name && id ? `${name}(${id})` : name || id || `${n + 1}번째 직원`;
 };
 
+/** 검증 오류 한 건. field는 그 오류를 고칠 입력칸 id(없으면 화면에 대응하는 칸이 없음) */
+export interface IInputError {
+  message: string;
+  field?: string;
+}
+
+// 오류 ↔ 입력칸을 잇는 id. 근무조·직원은 이름이 바뀌거나 겹칠 수 있어 목록 순서로 만든다
+export const F = {
+  rule: (key: string) => `f-rule-${key}`,
+  shift: (i: number, f: string) => `f-shift-${i}-${f}`,
+  emp: (i: number, f: string) => `f-emp-${i}-${f}`,
+};
+
 /** 클라이언트 검증. 엔진이 최종 판정을 하므로 자주 틀리는 것만 잡는다. 빈 배열이면 통과 */
-export function validateInput(input: Obj): string[] {
-  const errs: string[] = [];
-  if (hasUnsafeInt(input)) errs.push(`${fmtNum(Number.MAX_SAFE_INTEGER)}보다 큰 숫자는 정확히 다룰 수 없습니다. 숫자를 줄여 주세요.`);
+export function validateInput(input: Obj): IInputError[] {
+  const errs: IInputError[] = [];
+  const add = (message: string, field?: string) => errs.push({ message, field });
+  if (hasUnsafeInt(input)) add(`${fmtNum(Number.MAX_SAFE_INTEGER)}보다 큰 숫자는 정확히 다룰 수 없습니다. 숫자를 줄여 주세요.`);
   const p = obj(input.schedule_period);
-  if (!isYmd(p.start_date) || !isYmd(p.end_date)) errs.push("근무 기간의 시작일과 종료일을 입력하세요.");
+  if (!isYmd(p.start_date) || !isYmd(p.end_date)) add("근무 기간의 시작일과 종료일을 입력하세요.", isYmd(p.start_date) ? "f-end" : "f-start");
   else {
     const days = (toUtc(p.end_date as string) - toUtc(p.start_date as string)) / DAY_MS + 1;
-    if (days < 1) errs.push("근무 기간의 시작일이 종료일보다 늦습니다.");
-    else if (days > MAX_PERIOD_DAYS) errs.push(`근무 기간은 최대 ${MAX_PERIOD_DAYS}일까지 정할 수 있습니다.`);
+    if (days < 1) add("근무 기간의 시작일이 종료일보다 늦습니다.", "f-end");
+    else if (days > MAX_PERIOD_DAYS) add(`근무 기간은 최대 ${MAX_PERIOD_DAYS}일까지 정할 수 있습니다.`, "f-end");
   }
 
   const rules = obj(input.rules);
   for (const f of RULE_FIELDS) {
     if (f.key in rules && !(f.int ? isInt : isNum)(rules[f.key], f.min, f.max))
-      errs.push(`${f.label}은(는) ${fmtNum(f.min)}~${fmtNum(f.max)}${f.unit} 사이${f.int ? "의 정수" : ""}로 입력하세요.`);
+      add(`${f.label}은(는) ${fmtNum(f.min)}~${fmtNum(f.max)}${f.unit} 사이${f.int ? "의 정수" : ""}로 입력하세요.`, F.rule(f.key));
   }
-  if ("time_limit_seconds" in rules && rules.time_limit_seconds === 0) errs.push("계산 시간 제한은 0초보다 커야 합니다.");
+  if ("time_limit_seconds" in rules && rules.time_limit_seconds === 0) add("계산 시간 제한은 0초보다 커야 합니다.", F.rule("time_limit_seconds"));
   const mcd = typeof rules.max_consecutive_days === "number" ? rules.max_consecutive_days : DEFAULT_MAX_CONSECUTIVE_DAYS;
   const ruleWeek = typeof rules.max_weekly_hours === "number" ? rules.max_weekly_hours : DEFAULT_MAX_WEEKLY_HOURS;
   const rp = rules.rotation_pattern;
   let cycle = 0;
   if (rp !== undefined) {
     const { work_days: w, off_days: o } = obj(rp);
-    if (!isInt(w, 1, MAX_PERIOD_DAYS) || !isInt(o, 1, MAX_PERIOD_DAYS)) errs.push(`순환 근무의 근무일과 쉬는 날은 1~${MAX_PERIOD_DAYS}일로 입력하세요.`);
-    else if (w > mcd) errs.push(`순환 근무의 근무일(${w}일)이 최대 연속 근무일(${mcd}일)보다 깁니다.`);
+    if (!isInt(w, 1, MAX_PERIOD_DAYS) || !isInt(o, 1, MAX_PERIOD_DAYS)) add(`순환 근무의 근무일과 쉬는 날은 1~${MAX_PERIOD_DAYS}일로 입력하세요.`, isInt(w, 1, MAX_PERIOD_DAYS) ? "f-rot-off" : "f-rot-work");
+    else if (w > mcd) add(`순환 근무의 근무일(${w}일)이 최대 연속 근무일(${mcd}일)보다 깁니다.`, "f-rot-work");
     else cycle = w + o;
   }
 
   const shifts = obj(input.shift_definitions);
-  if (!isObj(input.shift_definitions)) errs.push("근무조가 하나도 없습니다.");
-  for (const [name, sd] of Object.entries(shifts)) {
-    const s = obj(sd);
-    if (!name.trim()) errs.push("이름이 비어 있는 근무조가 있습니다.");
-    if (!isHhmm(s.start) || !isHhmm(s.end)) errs.push(`근무조 ${name}: 시작·종료 시각을 09:00처럼 입력하세요.`);
-    if ("hours" in s && !isInt(s.hours, 0, MAX_SHIFT_HOURS)) errs.push(`근무조 ${name}: 근무 시간은 0~${MAX_SHIFT_HOURS}시간 사이의 정수로 입력하세요.`);
-  }
+  if (!isObj(input.shift_definitions)) add("근무조가 하나도 없습니다.");
+  const shiftNames = Object.keys(shifts);
+  shiftNames.forEach((name, si) => {
+    const s = obj(shifts[name]);
+    if (!name.trim()) add("이름이 비어 있는 근무조가 있습니다.", F.shift(si, "name"));
+    if (!isHhmm(s.start) || !isHhmm(s.end)) add(`근무조 ${name}: 시작·종료 시각을 09:00처럼 입력하세요.`, F.shift(si, isHhmm(s.start) ? "end" : "start"));
+    if ("hours" in s && !isInt(s.hours, 0, MAX_SHIFT_HOURS)) add(`근무조 ${name}: 근무 시간은 0~${MAX_SHIFT_HOURS}시간 사이의 정수로 입력하세요.`, F.shift(si, "hours"));
+  });
   for (const [name, r] of Object.entries(obj(input.shift_requirements))) {
-    if (!(name in shifts)) errs.push(`필요 인원에 등록되지 않은 근무조 ${name}이(가) 있습니다.`);
+    if (!(name in shifts)) add(`필요 인원에 등록되지 않은 근무조 ${name}이(가) 있습니다.`);
     for (const [f, label] of [["min_count", "최소 인원"], ["min_senior", "최소 숙련 인원"]]) {
       const v = obj(r)[f];
-      if (v !== undefined && !isInt(v, 0, MAX_HEADCOUNT)) errs.push(`근무조 ${name}: ${label}은 0~${fmtNum(MAX_HEADCOUNT)}명 사이로 입력하세요.`);
+      if (v !== undefined && !isInt(v, 0, MAX_HEADCOUNT)) add(`근무조 ${name}: ${label}은 0~${fmtNum(MAX_HEADCOUNT)}명 사이로 입력하세요.`, shiftNames.includes(name) ? F.shift(shiftNames.indexOf(name), f) : undefined);
     }
   }
 
-  if (!Array.isArray(input.employees)) errs.push("직원 목록이 없습니다.");
+  if (!Array.isArray(input.employees)) add("직원 목록이 없습니다.");
   const seen = new Set<string>();
   arr(input.employees).forEach((raw, n) => {
     const e = obj(raw);
     const id = str(e.id).trim();
-    const who = whoOf(e, n);
-    if (!id) errs.push(`${who}: 직원 번호를 입력하세요.`);
-    else if (seen.has(id)) errs.push(`직원 번호 ${id}이(가) 두 번 이상 쓰였습니다.`);
+    // 오류 문구 앞 표시는 행 순번 + 번호. 번호가 겹치거나 비어도 어느 행인지 구분된다
+    const who = id ? `직원 ${n + 1}번째 줄(${id})` : `직원 ${n + 1}번째 줄`;
+    if (!id) add(`${who}: 직원 번호를 입력하세요.`, F.emp(n, "id"));
+    else if (seen.has(id)) add(`직원 번호 ${id}이(가) 두 번 이상 쓰였습니다.`, F.emp(n, "id"));
     seen.add(id);
-    if (typeof e.name !== "string" || !e.name.trim()) errs.push(`${who}: 이름을 입력하세요.`);
-    if (!EMPLOYMENT_TYPES.some(([t]) => t === e.employment_type)) errs.push(`${who}: 고용 형태를 고르세요.`);
-    if (!LEVELS.some(([l]) => l === e.level)) errs.push(`${who}: 숙련도를 고르세요.`);
+    if (typeof e.name !== "string" || !e.name.trim()) add(`${who}: 이름을 입력하세요.`, F.emp(n, "name"));
+    if (!EMPLOYMENT_TYPES.some(([t]) => t === e.employment_type)) add(`${who}: 고용 형태를 고르세요.`, F.emp(n, "type"));
+    if (!LEVELS.some(([l]) => l === e.level)) add(`${who}: 숙련도를 고르세요.`, F.emp(n, "level"));
     if ("max_weekly_hours" in e && !isInt(e.max_weekly_hours, 0, MAX_WEEK_HOURS))
-      errs.push(`${who}: 주당 최대 근로시간은 0~${MAX_WEEK_HOURS}시간 사이의 정수로 입력하세요.`);
-    if ("hourly_wage" in e && !isNum(e.hourly_wage, 0, MAX_WAGE)) errs.push(`${who}: 시급은 0~${fmtNum(MAX_WAGE)}원 사이로 입력하세요.`);
-    if (!arr(e.approved_leaves).every(isYmd)) errs.push(`${who}: 휴가 날짜가 올바르지 않습니다.`);
+      add(`${who}: 주당 최대 근로시간은 0~${MAX_WEEK_HOURS}시간 사이의 정수로 입력하세요.`, F.emp(n, "maxh"));
+    if ("hourly_wage" in e && !isNum(e.hourly_wage, 0, MAX_WAGE)) add(`${who}: 시급은 0~${fmtNum(MAX_WAGE)}원 사이로 입력하세요.`, F.emp(n, "wage"));
+    if (!arr(e.approved_leaves).every(isYmd)) add(`${who}: 휴가 날짜가 올바르지 않습니다.`, F.emp(n, "leaves"));
     if (e.available_time_slots !== undefined && !arr(e.available_time_slots).every(isSlot))
-      errs.push(`${who}: 근무 가능 시간은 11:00-15:00처럼 입력하세요.`);
+      add(`${who}: 근무 가능 시간은 11:00-15:00처럼 입력하세요.`, F.emp(n, "slots"));
     const pref = obj(e.preferences).preferred_shift;
-    if (pref !== undefined && !(typeof pref === "string" && pref in shifts)) errs.push(`${who}: 선호 근무조 ${String(pref)}이(가) 등록되어 있지 않습니다.`);
+    if (pref !== undefined && !(typeof pref === "string" && pref in shifts)) add(`${who}: 선호 근무조 ${String(pref)}이(가) 등록되어 있지 않습니다.`, F.emp(n, "pref"));
     if (cycle && e.employment_type === "Full_Time" && e.rotation_offset != null && !isInt(e.rotation_offset, 0, cycle - 1))
-      errs.push(`${who}: 순환 근무 시작 위치는 1~${cycle}번째 날 중에서 고르세요.`);
+      add(`${who}: 순환 근무 시작 위치는 1~${cycle}번째 날 중에서 고르세요.`, F.emp(n, "rot"));
     if ("prior_consecutive_work_days" in e && !isInt(e.prior_consecutive_work_days, 0, mcd))
-      errs.push(`${who}: 직전까지 연속 근무일은 0~${mcd}일 사이로 입력하세요.`);
+      add(`${who}: 직전까지 연속 근무일은 0~${mcd}일 사이로 입력하세요.`, F.emp(n, "pcons"));
     // 엔진 _cap: min(규칙 주 상한, 직원 주 상한)
     const cap = Math.min(ruleWeek, typeof e.max_weekly_hours === "number" ? e.max_weekly_hours : ruleWeek);
-    if ("prior_week_hours" in e && !isInt(e.prior_week_hours, 0, cap)) errs.push(`${who}: 이번 주 이미 근무한 시간은 0~${cap}시간 사이로 입력하세요.`);
+    if ("prior_week_hours" in e && !isInt(e.prior_week_hours, 0, cap)) add(`${who}: 이번 주 이미 근무한 시간은 0~${cap}시간 사이로 입력하세요.`, F.emp(n, "pweek"));
     if (e.prior_last_shift_end != null && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(str(e.prior_last_shift_end)))
-      errs.push(`${who}: 마지막 근무 종료 시각이 올바르지 않습니다.`);
+      add(`${who}: 마지막 근무 종료 시각이 올바르지 않습니다.`, F.emp(n, "plast"));
   });
   return errs;
 }
+
+/** 입력칸에 붙이는 id·오류 연결 속성 */
+type FieldProps = { id: string; "aria-invalid"?: true; "aria-describedby"?: string };
 
 /** 문자열 목록(휴가 날짜, 가용 시간대) 편집: 칩 + 입력 + 추가 */
 const ListCell = memo<{
@@ -189,7 +208,10 @@ const ListCell = memo<{
   label: string;
   placeholder?: string;
   format?: (v: string) => string;
-}>(({ items, onChange, type, label, placeholder, format = (v) => v }) => {
+  field?: FieldProps;
+  /** 근무 기간 밖(지난 기간) 항목인지. 맞으면 흐리게 + '지난 기간' */
+  isStale?: (v: string) => boolean;
+}>(({ items, onChange, type, label, placeholder, format = (v) => v, field, isStale }) => {
   const [draft, setDraft] = useState("");
   const add = () => {
     const v = draft.trim();
@@ -200,8 +222,12 @@ const ListCell = memo<{
     <div className="flex min-w-44 flex-col gap-1">
       <ul className="flex flex-wrap gap-1">
         {items.map((it, i) => (
-          <li key={i} className="flex items-center gap-1 rounded-md border border-border bg-surface-2 py-0.5 pl-2 pr-1 text-xs tabular-nums">
+          <li
+            key={i}
+            className={`flex items-center gap-1 rounded-md border py-0.5 pl-2 pr-1 text-xs tabular-nums ${isStale?.(String(it)) ? "border-dashed border-border-strong text-muted" : "border-border bg-surface-2"}`}
+          >
             {format(String(it))}
+            {isStale?.(String(it)) && <span> · 지난 기간</span>}
             <button type="button" aria-label={`${label} ${format(String(it))} 빼기`} onClick={() => onChange(items.filter((_, j) => j !== i))} className="rounded px-1 text-muted hover:bg-danger-soft hover:text-danger">
               ×
             </button>
@@ -210,6 +236,7 @@ const ListCell = memo<{
       </ul>
       <div className="flex gap-1">
         <input
+          {...field}
           type={type}
           value={draft}
           placeholder={placeholder}
@@ -233,7 +260,7 @@ const ListCell = memo<{
 ListCell.displayName = "ListCell";
 
 /** 시프트 이름은 입력 중 키가 바뀌지 않도록 blur/Enter 시점에 반영한다. key={name}으로 외부 변경 시 초기화 */
-const ShiftNameInput = memo<{ name: string; onRename: (to: string) => void }>(({ name, onRename }) => {
+const ShiftNameInput = memo<{ name: string; onRename: (to: string) => void; field?: FieldProps }>(({ name, onRename, field }) => {
   const [draft, setDraft] = useState(name);
   const commit = () => {
     const to = draft.trim();
@@ -242,6 +269,7 @@ const ShiftNameInput = memo<{ name: string; onRename: (to: string) => void }>(({
   };
   return (
     <input
+      {...field}
       value={draft}
       aria-label="근무조 이름"
       onChange={(e) => setDraft(e.target.value)}
@@ -253,7 +281,7 @@ const ShiftNameInput = memo<{ name: string; onRename: (to: string) => void }>(({
 });
 ShiftNameInput.displayName = "ShiftNameInput";
 
-const NumInput = ({ value, onChange, label, min = 0, max, step = 1, placeholder, className = "w-20" }: {
+const NumInput = ({ value, onChange, label, min = 0, max, step = 1, placeholder, className = "w-20", field }: {
   value: unknown;
   onChange: (raw: string) => void;
   label: string;
@@ -262,8 +290,10 @@ const NumInput = ({ value, onChange, label, min = 0, max, step = 1, placeholder,
   step?: number | "any";
   placeholder?: string;
   className?: string;
+  field?: FieldProps;
 }) => (
   <input
+    {...field}
     type="number"
     value={numStr(value)}
     min={min}
@@ -279,10 +309,24 @@ const NumInput = ({ value, onChange, label, min = 0, max, step = 1, placeholder,
 interface IInputFormProps {
   value: Obj;
   onChange: (next: Obj) => void;
+  /** validateInput 결과. i번째 오류의 문구 id는 err-i(ScheduleRunner 오류 목록) */
+  errors: IInputError[];
 }
 
 /** 엔진 입력 폼. value를 복사해 고치므로 폼이 모르는 키는 그대로 남는다 */
-const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
+const InputForm = memo<IInputFormProps>(({ value, onChange, errors }) => {
+  // 입력칸 id → 그 칸 오류 문구 id들
+  const errIds = useMemo(() => {
+    const m = new Map<string, string[]>();
+    errors.forEach((e, i) => e.field && m.set(e.field, [...(m.get(e.field) ?? []), `err-${i}`]));
+    return m;
+  }, [errors]);
+  const fp = (field: string): FieldProps => {
+    const ids = errIds.get(field);
+    return { id: field, "aria-invalid": ids ? true : undefined, "aria-describedby": ids?.join(" ") };
+  };
+  // 근무조·직원 표에서 오류가 있는 행은 배경으로도 표시
+  const rowErr = (prefix: string) => [...errIds.keys()].some((k) => k.startsWith(prefix));
   const edit = useCallback(
     (fn: (draft: Obj) => void) => {
       const next = structuredClone(value);
@@ -303,6 +347,11 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
   // 정의되지 않은 항목(엔진 기본값의 Night 등)도 보여 줘야 지울 수 있다
   const undesirableOptions = [...workShifts, ...undesirable.filter((s) => !workShifts.includes(s))];
   const employees = arr(value.employees).map(obj);
+  // 근무 기간 밖 휴가(보통 [다음 기간 준비하기] 뒤 남은 지난 휴가). 표시만 하고, 지우기는 사용자가 누를 때만
+  const pStart = str(period.start_date);
+  const pEnd = str(period.end_date);
+  const isStaleLeave = (d: string) => isYmd(pStart) && isYmd(pEnd) && (d < pStart || d > pEnd);
+  const staleCount = employees.reduce((n, e) => n + arr(e.approved_leaves).filter((d) => isStaleLeave(String(d))).length, 0);
   const mcd = typeof rules.max_consecutive_days === "number" ? rules.max_consecutive_days : DEFAULT_MAX_CONSECUTIVE_DAYS;
   const ruleWeek = typeof rules.max_weekly_hours === "number" ? rules.max_weekly_hours : DEFAULT_MAX_WEEKLY_HOURS;
 
@@ -364,6 +413,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
+            {...fp("f-start")}
             aria-label="시작일"
             value={str(period.start_date)}
             onChange={(e) => edit((d) => void (child(d, "schedule_period").start_date = e.target.value))}
@@ -372,6 +422,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
           <span aria-hidden>~</span>
           <input
             type="date"
+            {...fp("f-end")}
             aria-label="종료일"
             value={str(period.end_date)}
             min={str(period.start_date) || undefined}
@@ -391,6 +442,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
               {f.label}({f.unit})
               <NumInput
                 label={`${f.label}(${f.unit})`}
+                field={fp(F.rule(f.key))}
                 value={rules[f.key]}
                 min={f.min}
                 max={f.max}
@@ -443,6 +495,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                 근무
                 <NumInput
                   label="순환 근무 근무일(일)"
+                  field={fp("f-rot-work")}
                   value={rp.work_days}
                   min={1}
                   max={mcd}
@@ -455,6 +508,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                 쉬는 날
                 <NumInput
                   label="순환 근무 쉬는 날(일)"
+                  field={fp("f-rot-off")}
                   value={rp.off_days}
                   min={1}
                   max={MAX_PERIOD_DAYS}
@@ -485,7 +539,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
               </tr>
             </thead>
             <tbody>
-              {shiftNames.map((name) => {
+              {shiftNames.map((name, si) => {
                 const sd = obj(shifts[name]);
                 const r = obj(reqs[name]);
                 const setDef = (key: string, v: string) => edit((d) => void (child(child(d, "shift_definitions"), name)[key] = v));
@@ -496,12 +550,12 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                     if (Object.keys(obj(all[name])).length === 0) delete all[name];
                   });
                 return (
-                  <tr key={name}>
+                  <tr key={name} className={rowErr(`f-shift-${si}-`) ? "bg-danger-soft" : undefined}>
                     <td className={`${TD} ${STICKY}`}>
                       {name === OFF ? (
                         <span className="px-2 font-medium">쉬는 날</span>
                       ) : (
-                        <ShiftNameInput key={name} name={name} onRename={(to) => renameShift(name, to)} />
+                        <ShiftNameInput key={name} name={name} field={fp(F.shift(si, "name"))} onRename={(to) => renameShift(name, to)} />
                       )}
                     </td>
                     {name === OFF ? (
@@ -511,24 +565,25 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                     ) : (
                       <>
                         <td className={TD}>
-                          <input value={str(sd.start)} placeholder="09:00" aria-label={`${name} 시작 시각`} onChange={(e) => setDef("start", e.target.value)} className={`${INPUT} w-20 tabular-nums`} />
+                          <input {...fp(F.shift(si, "start"))} value={str(sd.start)} placeholder="09:00" aria-label={`${name} 시작 시각`} onChange={(e) => setDef("start", e.target.value)} className={`${INPUT} w-20 tabular-nums`} />
                         </td>
                         <td className={TD}>
-                          <input value={str(sd.end)} placeholder="18:00" aria-label={`${name} 종료 시각`} onChange={(e) => setDef("end", e.target.value)} className={`${INPUT} w-20 tabular-nums`} />
+                          <input {...fp(F.shift(si, "end"))} value={str(sd.end)} placeholder="18:00" aria-label={`${name} 종료 시각`} onChange={(e) => setDef("end", e.target.value)} className={`${INPUT} w-20 tabular-nums`} />
                         </td>
                         <td className={TD}>
                           <NumInput
                             label={`${name} 근무 시간(시간)`}
+                            field={fp(F.shift(si, "hours"))}
                             value={sd.hours}
                             max={MAX_SHIFT_HOURS}
                             onChange={(raw) => edit((d) => setNum(child(child(d, "shift_definitions"), name), "hours", raw))}
                           />
                         </td>
                         <td className={TD}>
-                          <NumInput label={`${name} 최소 인원(명)`} value={r.min_count} max={MAX_HEADCOUNT} onChange={(raw) => setReq("min_count", raw)} />
+                          <NumInput label={`${name} 최소 인원(명)`} field={fp(F.shift(si, "min_count"))} value={r.min_count} max={MAX_HEADCOUNT} onChange={(raw) => setReq("min_count", raw)} />
                         </td>
                         <td className={TD}>
-                          <NumInput label={`${name} 최소 숙련 인원(명)`} value={r.min_senior} max={MAX_HEADCOUNT} onChange={(raw) => setReq("min_senior", raw)} />
+                          <NumInput label={`${name} 최소 숙련 인원(명)`} field={fp(F.shift(si, "min_senior"))} value={r.min_senior} max={MAX_HEADCOUNT} onChange={(raw) => setReq("min_senior", raw)} />
                         </td>
                       </>
                     )}
@@ -552,6 +607,23 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
 
       <fieldset className="space-y-3">
         <legend className={LEGEND}>직원 ({employees.length}명)</legend>
+        {staleCount > 0 && (
+          <div className="alert alert-info flex flex-wrap items-center justify-between gap-2">
+            <p>근무 기간 밖의 지난 휴가 {staleCount}건이 남아 있습니다. 이번 근무표에는 영향이 없습니다.</p>
+            <button
+              type="button"
+              onClick={() =>
+                edit((d) => {
+                  for (const e of arr(d.employees))
+                    if (isObj(e) && Array.isArray(e.approved_leaves)) e.approved_leaves = e.approved_leaves.filter((x) => !isStaleLeave(String(x)));
+                })
+              }
+              className={SMALL_BTN}
+            >
+              지난 휴가 지우기
+            </button>
+          </div>
+        )}
         <div className="relative overflow-x-auto rounded-[var(--radius)] border border-border">
           <table className="data-table border-collapse">
             <caption className="sr-only">직원 목록</caption>
@@ -575,15 +647,15 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                 const who = `직원 ${str(e.id) || i + 1}`;
                 const pref = obj(e.preferences).preferred_shift;
                 return (
-                  <tr key={i}>
+                  <tr key={i} className={rowErr(`f-emp-${i}-`) ? "bg-danger-soft" : undefined}>
                     <td className={`${TD} ${STICKY}`}>
-                      <input value={str(e.id)} aria-label="직원 번호" onChange={(ev) => editEmployee(i, (x) => void (x.id = ev.target.value))} className={`${INPUT} w-16`} />
+                      <input {...fp(F.emp(i, "id"))} value={str(e.id)} aria-label="직원 번호" onChange={(ev) => editEmployee(i, (x) => void (x.id = ev.target.value))} className={`${INPUT} w-16`} />
                     </td>
                     <td className={TD}>
-                      <input value={str(e.name)} aria-label={`${who} 이름`} onChange={(ev) => editEmployee(i, (x) => void (x.name = ev.target.value))} className={`${INPUT} w-28`} />
+                      <input {...fp(F.emp(i, "name"))} value={str(e.name)} aria-label={`${who} 이름`} onChange={(ev) => editEmployee(i, (x) => void (x.name = ev.target.value))} className={`${INPUT} w-28`} />
                     </td>
                     <td className={TD}>
-                      <select value={str(e.employment_type)} aria-label={`${who} 고용 형태`} onChange={(ev) => editEmployee(i, (x) => void (x.employment_type = ev.target.value))} className={INPUT}>
+                      <select {...fp(F.emp(i, "type"))} value={str(e.employment_type)} aria-label={`${who} 고용 형태`} onChange={(ev) => editEmployee(i, (x) => void (x.employment_type = ev.target.value))} className={INPUT}>
                         {!EMPLOYMENT_TYPES.some(([t]) => t === e.employment_type) && <option value="">고르세요</option>}
                         {EMPLOYMENT_TYPES.map(([t, label]) => (
                           <option key={t} value={t}>{label}</option>
@@ -591,7 +663,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                       </select>
                     </td>
                     <td className={TD}>
-                      <select value={str(e.level)} aria-label={`${who} 숙련도`} onChange={(ev) => editEmployee(i, (x) => void (x.level = ev.target.value))} className={INPUT}>
+                      <select {...fp(F.emp(i, "level"))} value={str(e.level)} aria-label={`${who} 숙련도`} onChange={(ev) => editEmployee(i, (x) => void (x.level = ev.target.value))} className={INPUT}>
                         {!LEVELS.some(([l]) => l === e.level) && <option value="">고르세요</option>}
                         {LEVELS.map(([l, label]) => (
                           <option key={l} value={l}>{label}</option>
@@ -599,14 +671,15 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                       </select>
                     </td>
                     <td className={TD}>
-                      <NumInput label={`${who} 주당 최대 근로(시간)`} value={e.max_weekly_hours} max={MAX_WEEK_HOURS} placeholder="규칙대로" className="w-24" onChange={(raw) => editEmployee(i, (x) => setNum(x, "max_weekly_hours", raw))} />
+                      <NumInput label={`${who} 주당 최대 근로(시간)`} field={fp(F.emp(i, "maxh"))} value={e.max_weekly_hours} max={MAX_WEEK_HOURS} placeholder="규칙대로" className="w-24" onChange={(raw) => editEmployee(i, (x) => setNum(x, "max_weekly_hours", raw))} />
                     </td>
                     <td className={TD}>
-                      <NumInput label={`${who} 시급(원)`} value={e.hourly_wage} max={MAX_WAGE} step="any" placeholder="기본 시급" className="w-28" onChange={(raw) => editEmployee(i, (x) => setNum(x, "hourly_wage", raw))} />
+                      <NumInput label={`${who} 시급(원)`} field={fp(F.emp(i, "wage"))} value={e.hourly_wage} max={MAX_WAGE} step="any" placeholder="기본 시급" className="w-28" onChange={(raw) => editEmployee(i, (x) => setNum(x, "hourly_wage", raw))} />
                     </td>
                     <td className={TD}>
                       <select
                         value={typeof pref === "string" ? pref : ""}
+                        {...fp(F.emp(i, "pref"))}
                         aria-label={`${who} 선호 근무조`}
                         onChange={(ev) =>
                           editEmployee(i, (x) => {
@@ -626,13 +699,14 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                       </select>
                     </td>
                     <td className={TD}>
-                      <ListCell type="date" label={`${who} 휴가`} format={formatDate} items={arr(e.approved_leaves)} onChange={(items) => editEmployee(i, (x) => void (x.approved_leaves = items))} />
+                      <ListCell type="date" label={`${who} 휴가`} field={fp(F.emp(i, "leaves"))} isStale={isStaleLeave} format={formatDate} items={arr(e.approved_leaves)} onChange={(items) => editEmployee(i, (x) => void (x.approved_leaves = items))} />
                     </td>
                     <td className={TD}>
                       {e.employment_type === "Part_Time" ? (
                         <ListCell
                           type="text"
                           label={`${who} 근무 가능 시간`}
+                          field={fp(F.emp(i, "slots"))}
                           placeholder="11:00-15:00"
                           format={(v) => v.replace("-", " ~ ")}
                           items={arr(e.available_time_slots)}
@@ -688,12 +762,13 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                     <tr key={i}>
                       <th scope="row" className={`${TD} ${STICKY} whitespace-nowrap px-3 text-left font-medium`}>{whoOf(e, i)}</th>
                       <td className={TD}>
-                        <NumInput label={`${who} 직전까지 연속 근무일(일)`} value={e.prior_consecutive_work_days} max={mcd} placeholder="0" onChange={(raw) => editEmployee(i, (x) => setNum(x, "prior_consecutive_work_days", raw))} />
+                        <NumInput label={`${who} 직전까지 연속 근무일(일)`} field={fp(F.emp(i, "pcons"))} value={e.prior_consecutive_work_days} max={mcd} placeholder="0" onChange={(raw) => editEmployee(i, (x) => setNum(x, "prior_consecutive_work_days", raw))} />
                       </td>
                       <td className={TD}>
                         <input
                           type="datetime-local"
                           value={str(e.prior_last_shift_end)}
+                          {...fp(F.emp(i, "plast"))}
                           aria-label={`${who} 마지막 근무 종료 시각`}
                           onChange={(ev) =>
                             editEmployee(i, (x) => {
@@ -705,12 +780,13 @@ const InputForm = memo<IInputFormProps>(({ value, onChange }) => {
                         />
                       </td>
                       <td className={TD}>
-                        <NumInput label={`${who} 이번 주 이미 근무한 시간(시간)`} value={e.prior_week_hours} max={Math.min(ruleWeek, typeof e.max_weekly_hours === "number" ? e.max_weekly_hours : ruleWeek)} placeholder="0" onChange={(raw) => editEmployee(i, (x) => setNum(x, "prior_week_hours", raw))} />
+                        <NumInput label={`${who} 이번 주 이미 근무한 시간(시간)`} field={fp(F.emp(i, "pweek"))} value={e.prior_week_hours} max={Math.min(ruleWeek, typeof e.max_weekly_hours === "number" ? e.max_weekly_hours : ruleWeek)} placeholder="0" onChange={(raw) => editEmployee(i, (x) => setNum(x, "prior_week_hours", raw))} />
                       </td>
                       <td className={TD}>
                         {/* 엔진 값은 0부터, 화면은 1번째 날부터 센다 */}
                         <NumInput
                           label={`${who} 순환 근무 시작 위치(번째 날)`}
+                          field={fp(F.emp(i, "rot"))}
                           value={typeof e.rotation_offset === "number" ? e.rotation_offset + 1 : undefined}
                           min={1}
                           max={cycle}

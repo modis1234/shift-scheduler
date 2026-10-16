@@ -311,7 +311,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
     const errs = validateInput(input as Record<string, unknown>);
     if (errs.length > 0) {
       setInputError(`확인이 필요한 항목 ${errs.length}건을 먼저 고쳐 주세요.`);
-      setInputErrorDetail(errs.slice(0, 3).join(" ") + (errs.length > 3 ? ` 외 ${errs.length - 3}건은 목록에서 확인하세요.` : ""));
+      setInputErrorDetail(errs.slice(0, 3).map((e) => e.message).join(" ") + (errs.length > 3 ? ` 외 ${errs.length - 3}건은 목록에서 확인하세요.` : ""));
       // 오류 요약 패턴: 목록으로 포커스를 옮겨 바로 읽고 이동할 수 있게
       errorSummaryRef.current?.focus();
       return;
@@ -367,6 +367,18 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         setRestored(true);
       }
     } catch {}
+  }, []);
+
+  /** 오류 목록에서 그 입력칸으로: JSON 편집 중이면 폼으로 바꾸고, 접힌 '지난 기간 정보'는 펼친 뒤 포커스 */
+  const goToField = useCallback((field: string) => {
+    setMode("form");
+    setTimeout(() => {
+      const el = document.getElementById(field);
+      const details = el?.closest("details");
+      if (details) details.open = true;
+      el?.focus();
+      el?.scrollIntoView({ block: "center" });
+    }, 0);
   }, []);
 
   const doLogout = useCallback(async () => {
@@ -428,7 +440,8 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur print:hidden">
+      {/* 모바일(<640px)에서는 헤더가 화면을 많이 차지해 sticky를 끈다 */}
+      <header className="top-0 z-30 border-b border-border bg-surface/90 backdrop-blur sm:sticky print:hidden">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3 sm:px-8">
           <div>
             <h1 className="text-lg font-bold tracking-tight">교대근무 스케줄러</h1>
@@ -494,7 +507,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
           <div className="space-y-4 p-5">
             {mode === "form" ? (
               parsed ? (
-                <InputForm value={parsed} onChange={handleFormChange} />
+                <InputForm value={parsed} onChange={handleFormChange} errors={validationErrors} />
               ) : (
                 <p role="alert" className="alert alert-warning">
                   입력 데이터 형식이 올바르지 않아 입력 폼을 보여 줄 수 없습니다. [고급: JSON 직접 편집]에서 고쳐 주세요.
@@ -521,7 +534,16 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                 <p id="error-summary-title" className="font-semibold">확인이 필요한 항목 {validationErrors.length}건</p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
                   {validationErrors.map((e, i) => (
-                    <li key={i}>{e}</li>
+                    // id는 입력칸 aria-describedby가 가리킨다. 칸이 있는 오류는 눌러서 그 칸으로 이동
+                    <li key={i} id={`err-${i}`}>
+                      {e.field ? (
+                        <button type="button" onClick={() => goToField(e.field!)} className="text-left underline underline-offset-2 hover:no-underline">
+                          {e.message}
+                        </button>
+                      ) : (
+                        e.message
+                      )}
+                    </li>
                   ))}
                 </ul>
               </div>

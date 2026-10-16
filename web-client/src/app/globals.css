@@ -188,6 +188,11 @@ body {
   .input::placeholder {
     color: var(--text-muted);
   }
+  /* 확인이 필요한 칸(aria-invalid): danger 테두리 */
+  .input[aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 1px var(--danger);
+  }
   .input:focus-visible {
     outline-offset: 0;
     border-color: var(--accent);
