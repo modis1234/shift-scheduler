@@ -224,6 +224,7 @@ body {
   .badge-success { background: var(--success-soft); color: var(--success); }
   .badge-warning { background: var(--warning-soft); color: var(--warning); }
   .badge-danger { background: var(--danger-soft); color: var(--danger); }
+  .badge-neutral { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
 
   .alert {
     padding: var(--space-3) var(--space-4);
