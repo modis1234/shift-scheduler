@@ -37,6 +37,24 @@ npm run dev   # http://localhost:3000
 `ENGINE_DIR`(기본 `../algorithm-engine`), python은 `ENGINE_PYTHON`(기본 `$ENGINE_DIR/.venv/bin/python`)으로 바꿀 수 있으므로 위 algorithm-engine venv를 먼저 만들어 둔다.
 동시에 실행되는 엔진 수는 `ENGINE_MAX_CONCURRENCY`(1 이상 정수, 기본 2)로 제한하며, 넘는 요청은 기다리지 않고 429(`Retry-After: 30`)로 거절한다. 제한은 Node 프로세스 단위다.
 
+### 로그인 (카카오)
+
+`/login`, `/auth/*`, `/api/invite`, 정적 파일을 뺀 모든 페이지·API는 로그인이 필요하다(기획: `docs/planning/login.md`). `web-client/.env.local`에
+`KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI`(`…/auth/kakao/callback`), `KAKAO_LOGOUT_REDIRECT_URI`(`…/login`),
+`SESSION_SECRET`(32자 이상, 바꾸면 모든 세션이 끊김), `ACCOUNTS_FILE`(계정 JSON 경로, Docker에서는 볼륨)을 둔다. `KAKAO_API_BASE`는 가짜 카카오 서버로 테스트할 때만 설정한다(localhost·127.0.0.1·[::1]만 허용).
+
+매장 계정은 운영 담당자가 `web-client`에서 스크립트로 관리한다. 초대 링크는 1회용·7일이고, 링크로 카카오 로그인한 계정이 그 매장에 연결된다.
+
+```bash
+node --env-file=.env.local scripts/accounts.mjs create "OO매장"   # 매장 생성 + 초대 링크 출력
+node --env-file=.env.local scripts/accounts.mjs list             # 매장 id·연결·초대 상태
+node --env-file=.env.local scripts/accounts.mjs invite <매장 id>  # 새 초대 링크(관리자 교체도 이것으로)
+node --env-file=.env.local scripts/accounts.mjs revoke-invite <매장 id>
+node --env-file=.env.local scripts/accounts.mjs unlink <매장 id>  # 연결 해제, 그 관리자의 로그인도 즉시 끊김
+node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
+node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
+```
+
 ## 배포 (Docker)
 
 `/api/schedule`이 같은 호스트에서 `solver.py`를 실행하므로 Next.js와 엔진을 이미지 하나에 담는다(루트 `Dockerfile`, multi-stage, `node` 사용자로 실행).
