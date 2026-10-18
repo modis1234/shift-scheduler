@@ -250,10 +250,3 @@ were handed and what counts as done. If you are setting up a world pack for your
 `rig context get world-example` has a fill-in template.
 
 <!-- END OpenRig MANAGED BLOCK: openrig-onboarding-02.md -->
-
-
-
-
-
-
-

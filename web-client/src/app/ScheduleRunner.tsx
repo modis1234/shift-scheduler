@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InputForm, { formatDate, validateInput } from "./InputForm";
 import ScheduleCalendar from "./ScheduleCalendar";
@@ -199,12 +200,12 @@ const ScheduleGrid = memo<IScheduleGridProps>(({ input, result }) => {
                       <td key={d} className={`border-b border-border p-0.5 text-center ${weekend ? "bg-surface-2" : ""}`}>
                         {assigned ? (
                           assigned.map((a) => (
-                            <div key={a.shift} title={`${a.shift} · ${a.reason}`} className={`truncate rounded px-0.5 py-1 font-medium ${colorOf(a.shift)}`}>
+                            <div key={a.shift} title={`${a.shift} · ${a.reason}`} className={`truncate rounded-[6px] px-0.5 py-1 font-medium ${colorOf(a.shift)}`}>
                               {a.shift}
                             </div>
                           ))
                         ) : leaves.has(d) ? (
-                          <div className="leave rounded px-1 py-1 font-medium">휴가</div>
+                          <div className="leave rounded-[6px] px-1 py-1 font-medium">휴가</div>
                         ) : null}
                       </td>
                     );
@@ -546,15 +547,18 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
   return (
     <div className="min-h-screen">
       {/* 모바일(<640px)에서는 헤더가 화면을 많이 차지해 sticky를 끈다 */}
-      <header className="top-0 z-30 border-b border-border bg-surface/90 backdrop-blur sm:sticky print:hidden">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3 sm:px-8">
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">교대근무 스케줄러</h1>
-            <p className="text-xs text-muted">근무 조건을 입력하면 근로시간·휴식 규칙을 지키는 근무표를 자동으로 만듭니다.</p>
+      <header className="app-header top-0 z-30 border-b border-border sm:sticky print:hidden">
+        <div className="mx-auto flex min-h-14 max-w-[1600px] flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 sm:px-8">
+          <div className="flex items-center gap-3">
+            <Image src="/app-icon.svg" alt="" width={28} height={28} unoptimized className="rounded-lg" />
+            <div>
+              <h1 className="text-[15px] font-bold tracking-[-0.01em]">교대근무 스케줄러</h1>
+              <p className="hidden text-xs text-muted sm:block">근무 조건을 입력하면 근로시간·휴식 규칙을 지키는 근무표를 자동으로 만듭니다.</p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="text-sm">
-              <span className="text-muted">근무 기간 </span>
+            <p className="chip">
+              <span className="text-muted">근무 기간</span>
               <span className="font-semibold tabular-nums">{periodLabel}</span>
             </p>
             {storeName && (
@@ -580,9 +584,9 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         onClose={() => setConfirm(null)}
         aria-labelledby="confirm-title"
         aria-describedby="confirm-desc"
-        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-5 text-fg backdrop:bg-black/40"
+        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-6 text-fg"
       >
-        <h2 id="confirm-title" className="text-base font-semibold">
+        <h2 id="confirm-title" className="section-title">
           {confirm?.title}
         </h2>
         <p id="confirm-desc" className="mt-2 text-sm">
@@ -610,9 +614,9 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         ref={logoutDialogRef}
         aria-labelledby="logout-title"
         aria-describedby="logout-desc"
-        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-5 text-fg backdrop:bg-black/40"
+        className="card m-auto w-[calc(100%-2rem)] max-w-[400px] p-6 text-fg"
       >
-        <h2 id="logout-title" className="text-base font-semibold">
+        <h2 id="logout-title" className="section-title">
           로그아웃
         </h2>
         <p id="logout-desc" className="mt-2 text-sm">
@@ -632,8 +636,8 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         <SavedSchedules refreshKey={listKey} currentId={saved?.id ?? null} onOpen={openSaved} onUnauthorized={toLogin} />
         {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
         <section aria-labelledby="step-input" className="card print:hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-            <h2 id="step-input" className="flex items-center gap-2 text-base font-semibold">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
+            <h2 id="step-input" className="section-title flex items-center gap-2">
               <StepNumber n={1} />
               근무 조건 입력
             </h2>
@@ -641,7 +645,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
               {mode === "json" ? "입력 폼으로 돌아가기" : "고급: JSON 직접 편집"}
             </button>
           </div>
-          <div className="space-y-4 p-5">
+          <div className="space-y-4 p-4 sm:p-6">
             {mode === "form" ? (
               parsed ? (
                 <InputForm value={parsed} onChange={handleFormChange} errors={validationErrors} />
@@ -689,7 +693,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
         </section>
 
         {/* 입력이 길어서 넓은 화면에서는 생성 버튼을 화면 아래에 붙여 둔다. 모바일은 바가 입력을 가리므로 붙이지 않는다 */}
-        <section aria-labelledby="step-generate" className="card z-20 sm:sticky sm:bottom-4 print:hidden">
+        <section aria-labelledby="step-generate" className="float-bar z-20 sm:sticky sm:bottom-4 print:hidden">
           <div className="flex flex-wrap items-center gap-3 px-5 py-3">
             <h2 id="step-generate" className="sr-only">근무표 만들기</h2>
             <StepNumber n={2} />
@@ -737,9 +741,10 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
             </p>
           )}
           {result && statusView && (
-            <div className="card space-y-5 p-5">
+            // 좌우 여백은 20px: 24px이면 1440px에서 근무표(직원 128 + 날짜 40×30)가 4px 넘쳐 가로 스크롤이 생긴다
+            <div className="card space-y-5 p-4 sm:px-5 sm:py-6">
               <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-                <h2 id="step-result" ref={resultHeadingRef} tabIndex={-1} className="flex items-center gap-2 text-base font-semibold">
+                <h2 id="step-result" ref={resultHeadingRef} tabIndex={-1} className="section-title flex items-center gap-2">
                   <StepNumber n={3} />
                   결과
                 </h2>
@@ -770,14 +775,15 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                   </div>
                 )}
                 {hasGrid && (
-                  <div className="flex gap-1 sm:ml-auto" role="group" aria-label="결과 보기">
+                  // 보기 전환은 세그먼트 컨트롤(주 버튼은 화면당 하나 규칙)
+                  <div className="segmented sm:ml-auto" role="group" aria-label="결과 보기">
                     {(
                       [
                         ["grid", "직원별 표"],
                         ["calendar", "달력"],
                       ] as const
                     ).map(([v, label]) => (
-                      <button key={v} type="button" aria-pressed={resultView === v} onClick={() => setResultView(v)} className={`btn btn-sm ${resultView === v ? "btn-primary" : "btn-secondary"}`}>
+                      <button key={v} type="button" aria-pressed={resultView === v} onClick={() => setResultView(v)}>
                         {label}
                       </button>
                     ))}
@@ -809,9 +815,9 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                     ],
                   ] as const
                 ).map(([k, v]) => (
-                  <div key={k} className="rounded-[var(--radius)] border border-border bg-surface-2 px-4 py-3">
+                  <div key={k} className="metric px-4 py-3">
                     <dt className="text-xs font-medium text-muted">{k}</dt>
-                    <dd className="mt-1 break-all text-lg font-semibold tabular-nums">{v}</dd>
+                    <dd className="metric-value mt-1 break-all">{v}</dd>
                   </div>
                 ))}
               </dl>

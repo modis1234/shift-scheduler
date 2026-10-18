@@ -41,7 +41,8 @@ const INPUT = "input";
 const SMALL_BTN = "btn btn-secondary btn-sm";
 const DEL_BTN = "btn btn-danger-ghost";
 const TH = "border-b border-border px-2 py-2 text-left whitespace-nowrap";
-const LEGEND = "mb-3 text-sm font-semibold";
+// 카드 안 하위 묶음 머리말(ui-guide v2: 테두리 없이 작은 muted 제목)
+const LEGEND = "subhead mb-3";
 // 가로 스크롤 시 첫 열 고정. 배경이 있어야 지나가는 칸이 비치지 않는다
 // 표를 감싼 스크롤 상자는 relative로 둔다. sr-only(absolute) 머리글이 스크롤 밖으로 빠져 모바일 페이지 폭을 늘리지 않게
 const STICKY = "sticky left-0 z-10 bg-surface";
@@ -224,7 +225,7 @@ const ListCell = memo<{
         {items.map((it, i) => (
           <li
             key={i}
-            className={`flex items-center gap-1 rounded-md border py-0.5 pl-2 pr-1 text-xs tabular-nums ${isStale?.(String(it)) ? "border-dashed border-border-strong text-muted" : "border-border bg-surface-2"}`}
+            className={`flex items-center gap-1 rounded-[var(--radius-sm)] border py-0.5 pl-2 pr-1 text-xs tabular-nums ${isStale?.(String(it)) ? "border-dashed border-border-strong text-muted" : "border-border bg-surface-2"}`}
           >
             {format(String(it))}
             {isStale?.(String(it)) && <span> · 지난 기간</span>}
@@ -407,7 +408,7 @@ const InputForm = memo<IInputFormProps>(({ value, onChange, errors }) => {
 
   return (
     // fieldset 기본 min-width(min-content)가 표를 카드 밖으로 밀어내지 않게 min-w-0
-    <div className="divide-y divide-border text-sm [&>fieldset]:min-w-0 [&>fieldset]:py-5 [&>fieldset:first-child]:pt-0">
+    <div className="space-y-8 text-sm [&>fieldset]:min-w-0">
       <fieldset className="space-y-2">
         <legend className={LEGEND}>근무 기간</legend>
         <div className="flex flex-wrap items-center gap-2">

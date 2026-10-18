@@ -59,10 +59,10 @@ const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOp
 
   return (
     <section aria-labelledby="saved-title" aria-busy={items === null && !failed} className="card print:hidden">
-      <h2 id="saved-title" className="border-b border-border px-5 py-3 text-base font-semibold">
+      <h2 id="saved-title" className="section-title border-b border-border px-4 py-3 sm:px-6">
         저장된 근무표
       </h2>
-      <div className="p-5">
+      <div className="p-4 sm:p-6">
         {failed ? (
           <p role="alert" className="alert alert-danger">
             저장된 근무표를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.
@@ -87,7 +87,7 @@ const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOp
                     type="button"
                     onClick={() => onOpen(s.id)}
                     aria-current={s.id === currentId ? "true" : undefined}
-                    className={`flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--radius)] border px-4 py-2 text-left text-sm hover:bg-surface-2 ${
+                    className={`flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--radius)] border px-4 py-2 text-left text-sm transition-[background-color,box-shadow] hover:bg-surface-2 hover:shadow-[var(--shadow-xs)] ${
                       s.id === currentId ? "border-accent bg-accent-soft" : "border-border"
                     }`}
                   >

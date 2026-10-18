@@ -1,24 +1,27 @@
 @import "tailwindcss";
 
-/* 디자인 토큰. 컴포넌트는 아래 @theme 유틸리티(bg-surface, text-muted 등)나 컴포넌트 클래스로만 색을 쓴다 */
+/* 디자인 토큰(ui-guide v2 3절). 컴포넌트는 아래 @theme 유틸리티(bg-surface, text-muted 등)나 컴포넌트 클래스로만 색을 쓴다 */
 :root {
-  --bg: #f5f6f8;
+  --bg: #f6f7f9;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #dde1e7;
-  --border-strong: #7d8794;
-  --text: #1b2028;
-  --text-muted: #59636f;
-  --accent: #2456cc;
-  --accent-hover: #1c47ad;
+  --surface-2: #f1f3f6;
+  --border: #e4e7ec;
+  --border-soft: #cfd4dc;
+  --border-strong: #7c8595;
+  --text: #0f1419;
+  --text-muted: #5b6472;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-fg: #ffffff;
-  --accent-soft: #e7eefc;
+  --accent-soft: #eef0ff;
   --success: #166b37;
   --success-soft: #e2f3e8;
   --warning: #8a4b00;
   --warning-soft: #fdf0d9;
   --danger: #b3261e;
   --danger-soft: #fce9e7;
+  /* 장식 전용(헤더 로고·로그인 배경). 글자 뒤에 쓰지 않는다 */
+  --brand-gradient: linear-gradient(135deg, #4f46e5, #a21caf);
 
   /* 시프트 팔레트 (배경/글자). 휴가(danger)와 겹치지 않게 빨강 계열은 뺐다 */
   --shift-0-bg: #dbeefd; --shift-0-fg: #0b4366;
@@ -28,16 +31,22 @@
   --shift-4-bg: #cff6ef; --shift-4-fg: #0f4a45;
   --shift-5-bg: #e2e6fb; --shift-5-fg: #2b3487;
 
-  --radius-sm: 6px;
+  --radius-sm: 8px;
   --radius: 10px;
-  --radius-lg: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.25rem;
   --space-6: 1.5rem;
-  --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.04);
+  --shadow-xs: 0 1px 2px rgb(15 20 25 / 0.05);
+  --shadow: 0 1px 2px rgb(15 20 25 / 0.04), 0 4px 12px -2px rgb(15 20 25 / 0.06);
+  --shadow-lg: 0 2px 4px rgb(15 20 25 / 0.04), 0 16px 40px -8px rgb(15 20 25 / 0.14);
+  /* 로그인 배경 빛 세기 */
+  --glow-1: rgb(79 70 229 / 0.14);
+  --glow-2: rgb(162 28 175 / 0.1);
 
   color-scheme: light;
 }
@@ -45,17 +54,18 @@
 /* 다크 색은 화면에서만. 인쇄는 항상 라이트(흰 종이) */
 @media screen and (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1116;
-    --surface: #161b22;
-    --surface-2: #1d232c;
-    --border: #2b323d;
-    --border-strong: #6b7585;
-    --text: #e6e9ee;
-    --text-muted: #9ba5b3;
-    --accent: #6b9af2;
-    --accent-hover: #86adf5;
-    --accent-fg: #0b1220;
-    --accent-soft: #1a2741;
+    --bg: #0a0c10;
+    --surface: #12151b;
+    --surface-2: #181c24;
+    --border: #262b35;
+    --border-soft: #353b47;
+    --border-strong: #677086;
+    --text: #eceef2;
+    --text-muted: #9aa3b2;
+    --accent: #8189f8;
+    --accent-hover: #9aa1fa;
+    --accent-fg: #0a0c10;
+    --accent-soft: #1d1f3d;
     --success: #5cc985;
     --success-soft: #11291b;
     --warning: #e6ac4c;
@@ -70,7 +80,11 @@
     --shift-4-bg: #0f3d39; --shift-4-fg: #c4f4eb;
     --shift-5-bg: #262d5c; --shift-5-fg: #dde2ff;
 
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.05);
+    --glow-1: rgb(79 70 229 / 0.24);
+    --glow-2: rgb(162 28 175 / 0.16);
 
     color-scheme: dark;
   }
@@ -81,6 +95,7 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
   --color-border-strong: var(--border-strong);
   --color-fg: var(--text);
   --color-muted: var(--text-muted);
@@ -101,6 +116,8 @@ body {
   color: var(--text);
   /* @theme inline은 --font-sans를 변수로 내보내지 않으므로 next/font 변수를 직접 쓴다 */
   font-family: var(--font-noto-sans-kr), system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.5;
   word-break: keep-all;
 }
 
@@ -124,6 +141,46 @@ body {
     box-shadow: var(--shadow);
   }
 
+  /* 제목 타이포(ui-guide 3절) */
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  /* 카드 안 하위 묶음 머리말: 테두리 없이 작은 muted 제목 */
+  .subhead {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  /* 떠 있는 유리 면: 헤더(72%)·생성 바(80%) */
+  .app-header {
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .float-bar {
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+  }
+  /* 헤더 오른쪽 근무 기간 칩 */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0.25rem 0.75rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 13px;
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
@@ -132,12 +189,12 @@ body {
     height: 2.5rem;
     padding: 0 var(--space-4);
     border: 1px solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     font-size: 0.875rem;
     font-weight: 600;
     white-space: nowrap;
     cursor: pointer;
-    transition: background-color 0.15s, border-color 0.15s;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
   }
   .btn:disabled {
     cursor: not-allowed;
@@ -146,14 +203,19 @@ body {
   .btn-primary {
     background: var(--accent);
     color: var(--accent-fg);
+    box-shadow: 0 1px 2px rgb(79 70 229 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.16);
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--accent-hover);
   }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(1px);
+  }
   .btn-secondary {
     background: var(--surface);
-    border-color: var(--border-strong);
+    border-color: var(--border-soft);
     color: var(--text);
+    box-shadow: var(--shadow-xs);
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--surface-2);
@@ -176,29 +238,61 @@ body {
     background: var(--danger-soft);
   }
 
+  /* 세그먼트 컨트롤: 보기 전환(주 버튼은 화면당 하나 규칙). 선택은 aria-pressed */
+  .segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 4px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+  .segmented > button {
+    height: 1.75rem;
+    padding: 0 var(--space-3);
+    border-radius: calc(var(--radius) - 4px);
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+  }
+  .segmented > button:hover {
+    color: var(--text);
+  }
+  .segmented > button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: var(--shadow-xs);
+  }
+
   .input {
-    height: 2.25rem;
-    padding: 0 var(--space-2);
+    height: 2.5rem;
+    padding: 0 var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     color: var(--text);
     font-size: 0.875rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
   }
   .input::placeholder {
     color: var(--text-muted);
   }
-  /* 확인이 필요한 칸(aria-invalid): danger 테두리 */
-  .input[aria-invalid="true"] {
-    border-color: var(--danger);
-    box-shadow: 0 0 0 1px var(--danger);
+  .input:hover {
+    border-color: var(--text-muted);
   }
   .input:focus-visible {
-    outline-offset: 0;
+    outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  /* 확인이 필요한 칸(aria-invalid): danger 테두리 + 링 */
+  .input[aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
   }
 
-  /* 카카오 로그인 버튼: 카카오 디자인 가이드 색(다크 모드에서도 같음). UI 가이드 파랑 주 버튼의 예외 */
+  /* 카카오 로그인 버튼: 카카오 디자인 가이드 색(다크 모드에서도 같음). UI 가이드 주 버튼의 예외 */
   .kakao-btn {
     display: flex;
     align-items: center;
@@ -213,13 +307,22 @@ body {
     font-weight: 600;
   }
 
+  /* 배지: pill + 앞 6px 점(색 + 글자로 상태 표시) */
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem var(--space-2);
+    gap: 6px;
+    padding: 0.125rem 0.625rem;
     border-radius: 999px;
     font-size: 0.75rem;
     font-weight: 600;
+  }
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
   }
   .badge-success { background: var(--success-soft); color: var(--success); }
   .badge-warning { background: var(--warning-soft); color: var(--warning); }
@@ -229,18 +332,38 @@ body {
   .alert {
     padding: var(--space-3) var(--space-4);
     border: 1px solid;
-    border-radius: var(--radius);
+    border-radius: 12px;
     font-size: 0.875rem;
   }
-  .alert-info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
-  .alert-warning { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
-  .alert-danger { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+  .alert-info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+  .alert-warning { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 25%, transparent); }
+  .alert-danger { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
+
+  /* 지표 카드 */
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-xs);
+  }
+  .metric-value {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
 
   .data-table th[scope="col"] {
     background: var(--surface-2);
     color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 600;
+  }
+  .data-table tbody tr {
+    transition: background-color 150ms ease;
+  }
+  .data-table tbody tr:hover {
+    background: color-mix(in srgb, var(--surface-2) 50%, transparent);
   }
 
   .shift-0 { background: var(--shift-0-bg); color: var(--shift-0-fg); }
@@ -250,12 +373,44 @@ body {
   .shift-4 { background: var(--shift-4-bg); color: var(--shift-4-fg); }
   .shift-5 { background: var(--shift-5-bg); color: var(--shift-5-fg); }
   .leave { background: var(--danger-soft); color: var(--danger); }
+
+  /* 로그인 배경 브랜드 빛(장식) */
+  .login-glow {
+    background:
+      radial-gradient(640px circle at 50% -8%, var(--glow-1), transparent 60%),
+      radial-gradient(420px circle at 85% 6%, var(--glow-2), transparent 60%),
+      var(--bg);
+  }
+}
+
+/* 대화상자: radius 20px, 떠 있는 그림자, 흐린 배경 */
+dialog.card {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+dialog::backdrop {
+  background: rgb(10 12 16 / 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 input[type="checkbox"] {
   accent-color: var(--accent);
   width: 1rem;
   height: 1rem;
+}
+
+/* 움직임 줄이기: 전환·애니메이션을 끄되 진행 중임을 알리는 스피너는 남긴다 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .animate-spin {
+    animation: spin 1s linear infinite !important;
+  }
 }
 
 /* 인쇄: A4 가로 한 장. 화면 전용 요소는 각 컴포넌트에서 print:hidden */
@@ -269,17 +424,30 @@ input[type="checkbox"] {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+  /* 그림자·그라데이션·blur·배경 빛은 종이에서 끈다 */
+  *,
+  ::before,
+  ::after {
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .login-glow {
+    background: #fff;
+  }
   main {
     max-width: none;
     padding: 0;
   }
   .card {
     border: none;
-    box-shadow: none;
     padding: 0;
   }
   /* 월 달력을 A4 가로 한 장에: 칸 높이·글자를 줄인다.
      ponytail: 근무조가 5개 넘거나 6주짜리 달이면 넘칠 수 있다. 그때는 근무조 줄을 '오픈2·미들2'처럼 한 줄로 합친다 */
+  .cal-month {
+    gap: 2px !important;
+  }
   .cal-month button {
     min-height: 0;
     padding: 2px 4px;
