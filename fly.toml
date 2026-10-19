@@ -12,10 +12,11 @@ primary_region = "nrt" # Supabase(ap-northeast-1)와 같은 도쿄
 [http_service]
   internal_port = 3000
   force_https = true
-  # 푸시 알림처럼 서버가 먼저 보내는 일이 생길 예정이라 한 대는 늘 켜 둔다
-  auto_stop_machines = "off"
+  # 개발용: 요청이 없으면 멈추고 접속하면 다시 켠다(켜진 시간만 과금).
+  # 운영 전환 시 auto_stop_machines = "off", min_machines_running = 1 (리마인더 푸시는 상시 실행 필요)
+  auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [[http_service.checks]]
     method = "GET"

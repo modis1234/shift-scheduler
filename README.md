@@ -155,7 +155,7 @@ docker run -d --name shift-scheduler -p 3000:3000 \
 
 ### 배포 (Fly.io)
 
-운영 호스트는 Fly.io 도쿄(`nrt`) 리전이다(2026-10-19 결정). Supabase와 같은 지역이고 HTTPS 인증서를 자동으로 발급한다. 설정은 루트 `fly.toml`(1GB 머신 1대 상시 실행, `/login` 헬스체크).
+운영 호스트는 Fly.io 도쿄(`nrt`) 리전이다(2026-10-19 결정). Supabase와 같은 지역이고 HTTPS 인증서를 자동으로 발급한다. 설정은 루트 `fly.toml`(1GB 머신, `/login` 헬스체크). 지금은 개발용이라 요청이 없으면 머신이 멈추고(첫 요청이 몇 초 느림), 도메인 없이 `https://<앱이름>.fly.dev`로 쓸 수 있다. 운영으로 바꿀 때는 `fly.toml` 주석대로 상시 실행으로 되돌린다.
 
 처음 한 번:
 
