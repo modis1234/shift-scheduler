@@ -1,0 +1,30 @@
+# Fly.io 배포 설정. 비밀 값은 여기 두지 않고 `fly secrets set`으로 넣는다(README '배포 (Fly.io)').
+# app 이름은 `fly apps create` 때 정한 값으로 바꾼다.
+app = "shift-scheduler"
+primary_region = "nrt" # Supabase(ap-northeast-1)와 같은 도쿄
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  STAFF_SHARE_BETA = "1"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # 푸시 알림처럼 서버가 먼저 보내는 일이 생길 예정이라 한 대는 늘 켜 둔다
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/login"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  # 엔진(OR-Tools)이 요청마다 python 프로세스를 띄우므로 1GB
+  size = "shared-cpu-1x"
+  memory = "1gb"
