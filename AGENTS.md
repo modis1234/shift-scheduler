@@ -250,3 +250,26 @@ were handed and what counts as done. If you are setting up a world pack for your
 `rig context get world-example` has a fill-in template.
 
 <!-- END OpenRig MANAGED BLOCK: openrig-onboarding-02.md -->
+
+# ai-scheduler-team 작업 규칙 (2026-10-19, 사용자 결정)
+
+토큰 절약을 위해 검증 단계를 변경 규모에 맞춘다.
+
+- **작은 수정**(리뷰·QA 지적 반영, 몇 줄짜리 버그 수정, 문구·스타일 조정): 구현 seat의 자체 확인(tsc·lint·관련 테스트) + dev-review 1회로 끝낸다. dev-qa는 거치지 않는다.
+- **기능 단위 작업**(새 화면·API·저장소 변경): 기획 → 구현 → dev-review → dev-qa 통합 확인 1회.
+- 확인만 하고 끝나는 일(수령 확인, 로컬 큐 조회로 답이 나오는 것)은 새 queue 항목을 만들지 말고 직접 확인한다.
+- 작업이 끝나 queue가 비면 결과를 docs/·커밋에 남긴 뒤 대화 기록을 비운다(/clear). 다음 작업은 queue 본문과 문서에서 맥락을 다시 읽는다.
+
+
+
+
+
+
+
+
+
+- dev-lead 운영 메모(팀 구성, 진행 중 작업, 운영 요령): `docs/team/lead-notes.md`. dev-lead는 시작할 때 먼저 읽는다.
+
+
+
+
