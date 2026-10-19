@@ -52,9 +52,9 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const SHIFT_COLORS = ["shift-0", "shift-1", "shift-2", "shift-3", "shift-4", "shift-5"];
 const EMPLOYMENT_LABEL: Record<string, string> = { Full_Time: "정규직", Part_Time: "파트타임" };
 const MAIN_TABS = [
+  { id: "personal", label: "내 일정" },
   { id: "create", label: "근무표 만들기" },
   { id: "manage", label: "근무표 관리" },
-  { id: "personal", label: "내 일정" },
 ] as const;
 type MainTab = (typeof MAIN_TABS)[number]["id"];
 
