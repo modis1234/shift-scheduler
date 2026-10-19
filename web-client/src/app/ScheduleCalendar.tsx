@@ -8,13 +8,13 @@ type View = "month" | "week" | "day";
 type Person = { id: string; name: string };
 
 const DAY_MS = 86_400_000;
-const addDays = (d: string, n: number) => new Date(toUtc(d) + n * DAY_MS).toISOString().slice(0, 10);
-const weekday = (d: string) => new Date(toUtc(d)).getUTCDay();
+export const addDays = (d: string, n: number) => new Date(toUtc(d) + n * DAY_MS).toISOString().slice(0, 10);
+export const weekday = (d: string) => new Date(toUtc(d)).getUTCDay();
 const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일 ${WEEKDAYS[weekday(d)]}요일`;
 // 주말 글자색: 일 = danger, 토 = accent (UI 가이드)
 const weekendText = (d: string) => (weekday(d) === 0 ? "text-danger" : weekday(d) === 6 ? "text-accent" : "");
 /** 오늘(브라우저 현지 날짜) */
-const todayIso = () => {
+export const todayIso = () => {
   const t = new Date();
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 };
@@ -132,7 +132,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
           return (
             <div key={s} className={`rounded-[var(--radius)] border border-border px-3 py-2 ${empFilter && people.some(matches) ? "ring-2 ring-accent" : ""}`}>
               <p className="text-sm">
-                <span className={`mr-2 rounded px-1.5 py-0.5 text-xs font-semibold ${colorOf(s)}`}>{s}</span>
+                <span className={`mr-2 rounded-[6px] px-1.5 py-0.5 text-xs font-semibold ${colorOf(s)}`}>{s}</span>
                 <span className="tabular-nums text-muted">{timeOf(s)}</span>
               </p>
               <p className="mt-1 text-sm">{names(people)}</p>
@@ -141,7 +141,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
         })}
         {leaves.length > 0 && (
           <p className="text-sm">
-            <span className="leave mr-2 rounded px-1.5 py-0.5 text-xs font-semibold">휴가</span>
+            <span className="leave mr-2 rounded-[6px] px-1.5 py-0.5 text-xs font-semibold">휴가</span>
             {names(leaves)}
           </p>
         )}
@@ -164,7 +164,8 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
       </p>
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <div className="flex gap-1" role="group" aria-label="달력 보기">
+        {/* 보기 전환은 세그먼트 컨트롤(주 버튼은 화면당 하나 규칙) */}
+        <div className="segmented" role="group" aria-label="달력 보기">
           {(
             [
               ["month", "월"],
@@ -172,7 +173,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
               ["day", "일"],
             ] as const
           ).map(([v, label]) => (
-            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={`btn btn-sm ${view === v ? "btn-primary" : "btn-secondary"}`}>
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
               {label}
             </button>
           ))}
@@ -219,18 +220,19 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
       {!anyMatch ? (
         <p className="card border-dashed px-5 py-8 text-center text-sm text-muted">선택한 조건에 맞는 근무가 없습니다. 필터를 바꿔 보세요.</p>
       ) : view === "month" ? (
-        <div className="cal-month overflow-hidden rounded-[var(--radius)] border border-border">
-          <div className="grid grid-cols-7 bg-surface-2 text-center text-xs font-semibold text-muted" aria-hidden>
+        <div className="space-y-1">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted" aria-hidden>
             {WEEKDAYS.map((w, i) => (
               <div key={w} className={`py-1.5 ${i === 0 ? "text-danger" : i === 6 ? "text-accent" : ""}`}>
                 {w}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          {/* 날짜 칸: 10px 둥근 카드, 간격으로 나눈다 */}
+          <div className="cal-month grid grid-cols-7 gap-1">
             {monthCells.map((d) => {
               const thisMonth = d >= from && d <= to;
-              if (!thisMonth || !inPeriod(d)) return <div key={d} className="min-h-12 border-t border-l border-border bg-surface-2 sm:min-h-24 [&:nth-child(7n+1)]:border-l-0" />;
+              if (!thisMonth || !inPeriod(d)) return <div key={d} className="min-h-12 rounded-[var(--radius)] bg-surface-2 sm:min-h-24" />;
               const day = byDate.get(d);
               const leaves = leavesByDate.get(d) ?? [];
               const rows = visibleShifts.map((s) => [s, day?.get(s) ?? []] as const).filter(([, p]) => p.length);
@@ -242,7 +244,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                   type="button"
                   aria-label={label}
                   onClick={() => openDay(d)}
-                  className={`min-h-12 border-t border-l border-border p-1 text-left align-top hover:bg-surface-2 sm:min-h-24 sm:p-1.5 [&:nth-child(7n+1)]:border-l-0 ${isToday ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+                  className={`min-h-12 rounded-[var(--radius)] border border-border bg-surface p-1 text-left align-top transition-colors hover:bg-surface-2 sm:min-h-24 sm:p-1.5 ${isToday ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
                 >
                   <span className={`text-xs font-semibold tabular-nums ${weekendText(d)}`}>
                     {Number(d.slice(8, 10))}
@@ -253,13 +255,13 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                     {rows.map(([s, p]) => (
                       <span
                         key={s}
-                        className={`block truncate rounded px-1 text-[11px] leading-5 ${empFilter && !p.some(matches) ? "text-muted" : `${colorOf(s)} font-medium`} ${empFilter && p.some(matches) ? "ring-1 ring-current" : ""}`}
+                        className={`block truncate rounded-[6px] px-1 text-[11px] leading-5 ${empFilter && !p.some(matches) ? "text-muted" : `${colorOf(s)} font-medium`} ${empFilter && p.some(matches) ? "ring-1 ring-current" : ""}`}
                       >
                         {s} {p.length}명
                       </span>
                     ))}
                     {leaves.length > 0 && (
-                      <span className={`leave block rounded px-1 text-[11px] leading-5 ${empFilter && leaves.some(matches) ? "font-bold ring-1 ring-current" : ""}`}>휴가 {leaves.length}명</span>
+                      <span className={`leave block rounded-[6px] px-1 text-[11px] leading-5 ${empFilter && leaves.some(matches) ? "font-bold ring-1 ring-current" : ""}`}>휴가 {leaves.length}명</span>
                     )}
                   </span>
                   <span className="mt-0.5 flex flex-wrap gap-x-1 text-[10px] leading-4 sm:hidden" aria-hidden>
@@ -297,7 +299,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                 {visibleShifts.map((s) => (
                   <tr key={s}>
                     <th scope="row" className="border-b border-r border-border px-3 py-2 text-left align-top font-medium">
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${colorOf(s)}`}>{s}</span>
+                      <span className={`rounded-[6px] px-1.5 py-0.5 text-xs font-semibold ${colorOf(s)}`}>{s}</span>
                       <span className="mt-1 block text-xs font-normal tabular-nums text-muted">{timeOf(s)}</span>
                     </th>
                     {Array.from({ length: 7 }, (_, i) => addDays(from, i)).map((d) => (
@@ -309,7 +311,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                 ))}
                 <tr>
                   <th scope="row" className="border-r border-border px-3 py-2 text-left font-medium">
-                    <span className="leave rounded px-1.5 py-0.5 text-xs font-semibold">휴가</span>
+                    <span className="leave rounded-[6px] px-1.5 py-0.5 text-xs font-semibold">휴가</span>
                   </th>
                   {Array.from({ length: 7 }, (_, i) => addDays(from, i)).map((d) => (
                     <td key={d} className="px-2 py-2 align-top text-xs">

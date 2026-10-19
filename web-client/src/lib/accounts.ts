@@ -1,9 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { createHash } from "node:crypto";
+import type postgres from "postgres";
+import { db } from "./db";
 
-// 계정 파일(ACCOUNTS_FILE) 형식. 운영자 스크립트(scripts/accounts.mjs)도 같은 형식을 읽고 쓰므로 바꾸면 둘 다 고친다
+// 매장(관리자 계정) 저장소: Postgres stores 표(db/migrations/001_init.sql). 운영자 스크립트(scripts/accounts.mjs)도 같은 표를 쓴다
 export type Store = {
   id: string;
   name: string;
@@ -12,52 +11,61 @@ export type Store = {
   invite: { hash: string; expiresAt: string } | null; // 초대 코드는 sha256 해시만 저장
   createdAt: string;
 };
-export type Accounts = { stores: Store[] };
 
-function accountsFile(): string {
-  const file = process.env.ACCOUNTS_FILE;
-  if (!file) throw new Error("ACCOUNTS_FILE 환경변수가 없습니다.");
-  return file.startsWith("~/") ? path.join(os.homedir(), file.slice(2)) : file;
-}
+type Row = {
+  id: string;
+  name: string;
+  kakao_id: string | null;
+  linked_at: Date | null;
+  invite_hash: string | null;
+  invite_expires_at: Date | null;
+  created_at: Date;
+};
+
+const toStore = (r: Row): Store => ({
+  id: r.id,
+  name: r.name,
+  kakaoId: r.kakao_id,
+  linkedAt: r.linked_at?.toISOString() ?? null,
+  invite: r.invite_hash && r.invite_expires_at ? { hash: r.invite_hash, expiresAt: r.invite_expires_at.toISOString() } : null,
+  createdAt: r.created_at.toISOString(),
+});
 
 export const hashInvite = (code: string) => createHash("sha256").update(code).digest("hex");
 
-/** 파일이 없으면 빈 상태. */
-export async function readAccounts(): Promise<Accounts> {
-  try {
-    return JSON.parse(await readFile(accountsFile(), "utf-8"));
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { stores: [] };
-    throw e;
-  }
+export async function getStore(id: string): Promise<Store | null> {
+  const [row] = await db()<Row[]>`SELECT * FROM stores WHERE id = ${id}`;
+  return row ? toStore(row) : null;
 }
 
-/** 임시 파일에 쓴 뒤 rename으로 바꿔 끼운다. */
-async function writeAccounts(accounts: Accounts) {
-  const file = accountsFile();
-  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(tmp, JSON.stringify(accounts, null, 2) + "\n", { mode: 0o600 });
-  await rename(tmp, file);
-}
-
-// ponytail: 한 Node 프로세스 안에서만 직렬화한다. 운영자 스크립트가 같은 순간에 쓰면 한쪽 변경이 사라질 수 있고, 인스턴스가 여럿이면 DB로 옮긴다
-let writing: Promise<unknown> = Promise.resolve();
-
-/** 읽기 → fn으로 수정 → 쓰기를 순서대로 한다. fn이 changed: false를 돌려주면 쓰지 않는다. */
-export function updateAccounts<T>(fn: (accounts: Accounts) => { changed: boolean; result: T }): Promise<T> {
-  const run = writing.then(async () => {
-    const accounts = await readAccounts();
-    const { changed, result } = fn(accounts);
-    if (changed) await writeAccounts(accounts);
-    return result;
-  });
-  writing = run.catch(() => {});
-  return run;
+export async function findStoreByKakaoId(kakaoId: string): Promise<Store | null> {
+  const [row] = await db()<Row[]>`SELECT * FROM stores WHERE kakao_id = ${kakaoId}`;
+  return row ? toStore(row) : null;
 }
 
 /** 만료되지 않은 초대 코드의 매장. */
-export function findInvitedStore(accounts: Accounts, code: string): Store | undefined {
-  const hash = hashInvite(code);
-  return accounts.stores.find((s) => s.invite?.hash === hash && Date.parse(s.invite.expiresAt) > Date.now());
+export async function findInvitedStore(code: string): Promise<Store | null> {
+  const [row] = await db()<Row[]>`SELECT * FROM stores WHERE invite_hash = ${hashInvite(code)} AND invite_expires_at > now()`;
+  return row ? toStore(row) : null;
+}
+
+/** 초대 코드의 매장에 카카오 계정을 연결하고 초대를 사용 처리한다(1회용). 이전 관리자 연결은 덮어써서 끊긴다(그 세션도 readSession에서 무효) */
+export async function linkInvitedStore(code: string, kakaoId: string): Promise<Store | "invite_invalid" | "already_linked"> {
+  try {
+    return await db().begin(async (tx) => {
+      // 같은 초대 코드로 동시에 들어와도 한 번만 쓰이게 행을 잠근다
+      const [store] = await tx<Row[]>`SELECT * FROM stores WHERE invite_hash = ${hashInvite(code)} AND invite_expires_at > now() FOR UPDATE`;
+      if (!store) return "invite_invalid" as const;
+      const [other] = await tx`SELECT 1 FROM stores WHERE kakao_id = ${kakaoId} AND id <> ${store.id}`;
+      if (other) return "already_linked" as const;
+      const [row] = await tx<Row[]>`
+        UPDATE stores SET kakao_id = ${kakaoId}, linked_at = now(), invite_hash = NULL, invite_expires_at = NULL
+        WHERE id = ${store.id} RETURNING *`;
+      return toStore(row);
+    });
+  } catch (e) {
+    // 다른 매장 연결이 동시에 같은 카카오 계정을 잡으면 kakao_id UNIQUE가 막는다
+    if ((e as postgres.PostgresError).code === "23505") return "already_linked";
+    throw e;
+  }
 }

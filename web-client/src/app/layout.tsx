@@ -17,6 +17,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "교대근무 스케줄러",
   description: "근무 조건을 입력하면 근무표를 자동으로 만들어 주는 매장 관리 도구입니다.",
+  // 앱 아이콘(docs/design/app-icon/app-icon.svg 복사본)을 favicon으로
+  icons: { icon: "/app-icon.svg" },
 };
 
 export default function RootLayout({

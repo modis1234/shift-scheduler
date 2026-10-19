@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React, { memo, useEffect, useState } from "react";
 import { SAVED_INPUT_KEY } from "../ScheduleRunner";
 
@@ -93,13 +94,15 @@ const LoginView = memo<ILoginViewProps>(({ error, invite, next, loggedOut }) => 
   const startHref = `/auth/kakao/start?${params}`;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
-      <div className="mb-6 text-center">
-        <h1 className="text-xl font-bold tracking-tight">교대근무 스케줄러</h1>
+    <main className="login-glow flex min-h-screen flex-col items-center justify-center px-4 py-12">
+      {/* 배경 브랜드 빛(장식)은 login-glow. 인쇄에서는 끈다 */}
+      <div className="mb-6 flex flex-col items-center text-center">
+        <Image src="/app-icon.svg" alt="" width={56} height={56} unoptimized priority className="mb-4 rounded-2xl" />
+        <h1 className="text-2xl font-bold tracking-[-0.02em]">교대근무 스케줄러</h1>
         <p className="mt-1 text-sm text-muted">근무 조건을 넣으면 근무표를 만들어 드립니다.</p>
       </div>
-      <section aria-labelledby="login-title" className="card w-full max-w-[400px] space-y-4 p-5">
-        <h2 id="login-title" className="text-base font-semibold">
+      <section aria-labelledby="login-title" className="card w-full max-w-[400px] space-y-4 rounded-[var(--radius-xl)] p-5 shadow-[var(--shadow-lg)] sm:p-7">
+        <h2 id="login-title" className="section-title">
           로그인
         </h2>
         {alert && (

@@ -1,6 +1,6 @@
 # 근무 캘린더 기획서
 
-상태: v0.1 결정 확정(2026-10-16). 이번 범위는 1단계(관리자 달력 보기 + 인쇄). 구현 지시 전. 구현 규모는 모두 기획자 **추정**(BE·FE 확인 전).
+상태: v0.1 결정 확정(2026-10-16). 1·2단계 구현됨. 3단계(직원 보기 PWA 베타) 계약·완료 기준 확정(2026-10-19, 7-3절). 규모는 기획자 **추정**.
 
 ## 1. 목적과 사용자
 
@@ -119,6 +119,94 @@
 
 2~4단계 완료 기준은 결정 후 추가한다.
 
+## 7-3. 완료 기준 (3단계: 직원 보기, PWA 베타)
+
+범위: 4.3절 화면 + 5·6절 정책. 웹앱(PWA) 설치까지. 네이티브 앱·서비스워커·오프라인 캐시는 제외(no-store와 충돌). 새 의존성 없음, 엔진·기존 관리자 API 변경 없음.
+
+### 계약
+
+**저장** — Postgres(Supabase, `DATABASE_URL`)에 표 하나. 저장소 이전(결정 7)의 마이그레이션에 같이 넣는다(001 또는 002).
+
+```sql
+CREATE TABLE share_links (
+  store_id <stores.id와 같은 타입> PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+  code text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+- 코드: `randomBytes(16)`(128비트) → base64url 22자. 매장당 1행. 새로 만들면 같은 행을 덮어써 이전 코드는 그 즉시 404.
+- 코드는 평문 저장. 근거: 관리자가 언제든 [복사]해야 하고, 같은 DB에 이미 더 민감한 입력값(시급 등)이 있다. 초대 코드처럼 해시로 저장하면 다시 보여 줄 수 없다.
+- 형식(`^[A-Za-z0-9_-]{22}$`)이 아니면 DB 조회 없이 404.
+
+**관리자 API** (로그인 필요, 기존 `sessionStore` 사용, `Cache-Control: no-store`)
+
+| 요청 | 응답 |
+|---|---|
+| `GET /api/share-link` | 200 `{ code: string \| null, createdAt: string \| null }` |
+| `POST /api/share-link` | 201 `{ code, createdAt }` — 없으면 만들고, 있으면 새 코드로 바꾼다 |
+
+화면 주소는 프런트가 `${location.origin}/s/${code}`로 만든다.
+
+**직원 API** (로그인 없음) `GET /api/s/<code>`
+
+- 코드가 없거나 바뀌었거나 형식이 틀리면 모두 404 `{ error: "링크를 열 수 없습니다." }`. 어느 쪽인지 구분하지 않는다.
+- 200 응답. **아래 필드만** 서버에서 새 객체로 만들어 보낸다. 저장된 input·result를 걸러 보내지 말고 아래 모양으로 새로 만든다:
+
+```ts
+{
+  storeName: string,
+  periods: Array<{                       // 게시됨(published)만, startDate 오름차순. 없으면 []
+    startDate: string, endDate: string,  // YYYY-MM-DD
+    shifts: Array<{ name: string, start: string, end: string }>, // shift_definitions 순서, hours>0만(엔진처럼 Off 제외). start/end "HH:MM"
+    employees: string[],                 // 이 근무표 입력의 직원 이름(이름 선택 상자용), 가나다순
+    days: Array<{ date: string, shift: string, names: string[] }>, // 엔진 schedules에서 이름만
+    leaves: Array<{ date: string, name: string }>, // approved_leaves 중 기간 안 날짜만
+  }>
+}
+```
+
+- 나가지 않는 것(예시): 직원 id, 시급, 고용 형태, 숙련, 근로시간 상한·가용 시간, `assignment_reason`, `rotation_offset`, 공정성 점수·인건비·경고, 근무표 id, 작성 중·게시 취소된 근무표.
+
+**헤더** — `/s/*` 화면과 `/api/s/*` 응답 모두: `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`(주소에 코드가 있음). 화면에는 `<meta name="robots" content="noindex, nofollow">`도 넣는다.
+
+**베타 토글** — 환경변수 `STAFF_SHARE_BETA=1`일 때만 켠다(그 외 값·없음 = 꺼짐).
+
+- 꺼짐: `/s/*` 404(Next `notFound()`), `/api/s/*`·`/api/share-link` 404, 관리자 화면의 공유 링크 영역 숨김(`page.tsx`가 env를 읽어 prop으로 넘긴다). `share_links` 행은 지우지 않으므로 다시 켜면 같은 링크가 열린다.
+
+**middleware.ts** — `isPublic`에 `/s/`로 시작하는 경로와 `/api/s/`로 시작하는 경로를 추가한다. `manifest.webmanifest`·`.png`·`.svg`는 지금 matcher에서 이미 빠져 있으므로 바꿀 것 없음(확인만).
+
+**PWA**
+
+- `public/manifest.webmanifest`: `name` "근무표 (베타)", `short_name` "근무표", `display: "standalone"`, `scope: "/s/"`, 아이콘 `docs/design/app-icon/app-icon-512.png`·`-128.png`를 `public/`에 복사해 쓰고, `app-icon.svg`도 `"sizes": "any"`로 함께 넣는다. **`start_url`은 넣지 않는다.** 그러면 설치한 페이지(`/s/<코드>`)가 시작 주소가 된다.
+- `<link rel="manifest">`, `apple-touch-icon`, `theme-color`는 `/s/*` 화면에서만 넣는다. 관리자 화면은 설치 대상이 아니다.
+
+**여러 게시본** — 기간이 다른 게시본이 여러 개면 화면 위쪽에 기간 선택(보조 버튼 또는 선택 상자)을 둔다. 처음 고르는 기간: 오늘(기기 날짜)이 들어 있는 기간 → 없으면 가장 가까운 앞으로의 기간 → 없으면 가장 최근에 끝난 기간. 기간이 겹치면 합치지 않고 따로 보여 준다. 게시본이 하나면 선택 영역을 숨긴다.
+
+**이름 선택** — `localStorage`에 이름을 기억한다(키 `shift-scheduler:staff-name:<코드>`). 저장된 이름이 고른 기간의 `employees`에 없으면 선택하지 않은 상태로 연다. 같은 이름이 둘이면 구분할 수 없다. 관리자가 입력에서 이름을 다르게 적어야 한다(베타 한계, 화면에는 안내하지 않음).
+
+**관리자 화면 링크 영역** — "저장된 근무표" 카드 아래쪽에 "직원 공유 링크" 줄을 둔다.
+
+- 링크가 있을 때: 읽기 전용 입력칸(주소) + `[복사]` + `[링크 새로 만들기]`(보조 버튼). 안내 "게시된 근무표만 직원에게 보입니다."
+- 링크가 없을 때: `[링크 만들기]`만.
+- 새로 만들기 확인: "새 링크를 만들면 지금 링크는 바로 열리지 않습니다. 새로 만들까요?"
+- 복사가 끝나면 `aria-live`로 "복사했습니다". 실패하면 입력칸을 선택해 둔 채 "복사하지 못했습니다. 주소를 직접 복사해 주세요."
+
+### 확인 항목 (be·fe·qa)
+
+1. `STAFF_SHARE_BETA` 없음: `/s/아무거나`, `/api/s/아무거나`, `/api/share-link` 모두 404이고, 관리자 화면에 링크 영역이 없다.
+2. 켬, 로그아웃 상태: `/s/<코드>`가 로그인으로 보내지 않고 열린다. `/api/share-link`는 401.
+3. [링크 만들기] → 22자 코드. [링크 새로 만들기] 뒤 이전 코드의 `/s/`·`/api/s/`는 404이고, 화면은 "링크를 열 수 없습니다…"다.
+4. `/api/s/<코드>` 응답 JSON의 키가 위 계약과 정확히 같다. 입력에 시급·고용 형태 등이 있어도 응답 본문에 그 값이 없다(본문 문자열 검색으로 확인).
+5. 작성 중·게시 취소된 근무표는 나오지 않는다. 게시를 취소하면 다음 요청부터 사라진다. 게시본이 없으면 "아직 게시된 근무표가 없습니다…"가 보인다.
+6. 다른 매장의 코드로는 다른 매장 근무표만 보인다(두 매장 교차 확인).
+7. 응답 헤더에 `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`가 있고, 화면 HTML에 robots meta가 있다.
+8. 휴대폰 폭(360px)에서 가로 스크롤 없음. 이름 선택 → 내 근무 목록(4.3절 문구·형식) → 일·주 전환이 된다. 새로고침하면 이름이 기억되어 있다. 내 근무가 없으면 "이 기간에는 배정된 근무가 없습니다."
+9. 게시본 둘(기간 다름): 오늘이 든 기간이 먼저 열리고 다른 기간으로 바꿀 수 있다.
+10. 화면에 "베타" 배지가 보인다. Android Chrome에서 "홈 화면에 추가"를 하면 앱 아이콘으로 설치되고, 설치한 앱은 같은 `/s/<코드>`로 열린다(manifest 오류 없음: DevTools Application 탭).
+11. 키보드로 이름 선택·보기 전환이 되고, 라이트·다크 대비 기준을 충족한다(UI 가이드 v2).
+12. 기존 관리자 기능(로그인, 근무표 만들기, 저장·게시, 달력)이 그대로다.
+
 ## 8. 결정 사항
 
 2026-10-16 사용자 확정(dev-lead 경유). 모두 추천안. 규모는 기획자 추정.
@@ -130,5 +218,8 @@
 | 3. 관리자 수정 | 보기 전용(바꾸려면 조건 수정 후 다시 만들기) | 칸 수정 + 재검증, 드래그 |
 | 4. 근무표 저장소 | SQLite(2단계에서 적용) | 서버 JSON 파일, 관리형 Postgres |
 | 5. 2단계 저장·게시 (2026-10-16 확정) | Node 내장 `node:sqlite`(새 의존성 0, 경로 env `SCHEDULES_DB`, Docker는 볼륨), 계정은 JSON 파일 유지, 생성 입력·결과를 그대로 저장, 상태 작성 중/게시됨/게시 취소됨(같은 기간 게시 1개), 근무 기간 종료 후 3년 보관(법적 확인 필요)·관리자 직접 삭제(자동 삭제는 나중) | — |
+
+| 6. 3단계 직원 보기 (2026-10-19, 범위·형태는 사용자 확정, 세부는 기획 기본값) | 웹앱(PWA) 베타, `STAFF_SHARE_BETA=1`로 켬. 공유 코드는 `share_links` 표에 평문 저장(관리자 재복사용, 저장소는 결정 7), 직원 API는 7-3 필드만 새로 만들어 응답, 여러 게시본은 기간 선택(오늘 포함 기간 기본) | 네이티브 앱, 서비스워커 오프라인 캐시, 코드 해시 저장(한 번만 보여 줌), 계정 JSON에 저장 |
+| 7. 저장소 변경 (2026-10-19 사용자 확정, dev-lead 경유) | 결정 4·5의 SQLite → **Supabase Postgres로 변경**. 근무표·계정·공유 링크 모두 Postgres, npm `postgres` 1개로 서버에서 직접 연결(env `DATABASE_URL`), supabase-js·Auth·RLS 클라이언트 접근 없음, 기존 로컬 데이터는 버림. 상태·게시 규칙·보관 기간 등 결정 5의 나머지는 그대로 | SQLite 유지 |
 
 2단계(저장·게시)는 로그인 구현이 끝난 뒤 따로 연다.

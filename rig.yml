@@ -10,7 +10,7 @@ pods:
       - id: lead
         label: Lead Architect
         agent_ref: "local:agents/lead-architect"
-        runtime: claude-code
+        runtime: codex
         profile: default
         cwd: "."
       - id: algo
@@ -19,8 +19,8 @@ pods:
         runtime: claude-code
         profile: default
         cwd: "."
-      - id: fe
-        label: Frontend Engineer
+      - id: developer
+        label: Developer
         agent_ref: "local:agents/frontend-engineer"
         runtime: claude-code
         profile: default
@@ -28,7 +28,7 @@ pods:
       - id: plan
         label: Product Planner
         agent_ref: "local:agents/product-planner"
-        runtime: claude-code
+        runtime: codex
         profile: default
         cwd: "."
       - id: design
@@ -73,9 +73,9 @@ pods:
         to: review
       - kind: delegates_to
         from: lead
-        to: fe
+        to: developer
       - kind: delegates_to
-        from: fe
+        from: developer
         to: review
       - kind: delegates_to
         from: lead
@@ -91,7 +91,7 @@ pods:
         to: design
       - kind: delegates_to
         from: design
-        to: fe
+        to: developer
       - kind: delegates_to
         from: lead
         to: plan

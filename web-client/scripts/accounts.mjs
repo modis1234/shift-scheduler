@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// 운영 담당자용 계정 관리. 의존성 없음. web-client에서: node --env-file=.env.local scripts/accounts.mjs <명령>
-// 계정 파일 형식은 src/lib/accounts.ts와 같다. 서버가 같은 순간에 초대를 사용 처리하면 한쪽 변경이 사라질 수 있으니 사용이 적을 때 실행한다
+// 운영 담당자용 계정 관리. web-client에서: node --env-file=.env.local scripts/accounts.mjs <명령>
+// 서버와 같은 Postgres stores 표(db/migrations/001_init.sql)를 쓴다. 의존성은 앱과 같은 postgres 하나
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import postgres from "postgres";
 
 const INVITE_DAYS = 7;
 const USAGE = `사용법: node --env-file=.env.local scripts/accounts.mjs <명령>
@@ -28,126 +25,113 @@ function env(name) {
   return v;
 }
 
-const file = (() => {
-  const f = env("ACCOUNTS_FILE");
-  return f.startsWith("~/") ? path.join(os.homedir(), f.slice(2)) : f;
-})();
+// src/lib/db.ts와 같은 연결 규칙: sslmode가 없으면 SSL 필수, transaction pooler 대비 prepare 끔
+const url = env("DATABASE_URL");
+const sql = postgres(url, { ...(/[?&]sslmode=/.test(url) ? {} : { ssl: "require" }), prepare: false, max: 1, onnotice: () => {} });
 
-async function load() {
+async function findStore(id) {
+  const [store] = await sql`SELECT * FROM stores WHERE id = ${id ?? ""}`;
+  return store ?? fail(`매장 ${id}이(가) 없습니다. list로 id를 확인하세요.`);
+}
+
+/** 초대 링크의 origin. DB를 바꾸기 전에 불러 설정 오류로 고아 매장·무효화된 초대가 남지 않게 한다 */
+function inviteOrigin() {
+  const raw = env("KAKAO_REDIRECT_URI");
+  let u;
   try {
-    return JSON.parse(await readFile(file, "utf-8"));
-  } catch (e) {
-    if (e.code === "ENOENT") return { stores: [] };
-    throw e;
+    u = new URL(raw);
+  } catch {
+    u = null;
   }
+  if (u?.protocol !== "http:" && u?.protocol !== "https:") fail("KAKAO_REDIRECT_URI가 http(s) URL이 아닙니다. .env.local을 확인하세요.");
+  return u.origin;
 }
 
-async function save(accounts) {
-  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(tmp, JSON.stringify(accounts, null, 2) + "\n", { mode: 0o600 });
-  await rename(tmp, file);
-}
-
-function findStore(accounts, id) {
-  return accounts.stores.find((s) => s.id === id) ?? fail(`매장 ${id}이(가) 없습니다. list로 id를 확인하세요.`);
-}
-
-/** 초대 코드를 새로 만들어 해시만 저장하고, 전체 링크를 돌려준다. */
-function newInvite(store) {
+/** 초대 코드를 새로 만들어 해시만 저장하고(이전 미사용 코드는 덮어써서 무효), 전체 링크를 돌려준다. */
+async function newInvite(db, storeId, origin) {
   const code = randomBytes(16).toString("base64url"); // 128비트
-  const expiresAt = new Date(Date.now() + INVITE_DAYS * 86400_000).toISOString();
-  store.invite = { hash: createHash("sha256").update(code).digest("hex"), expiresAt };
-  const origin = new URL(env("KAKAO_REDIRECT_URI")).origin;
-  return { url: `${origin}/login?invite=${code}`, expiresAt };
+  const expiresAt = new Date(Date.now() + INVITE_DAYS * 86400_000);
+  const hash = createHash("sha256").update(code).digest("hex");
+  await db`UPDATE stores SET invite_hash = ${hash}, invite_expires_at = ${expiresAt} WHERE id = ${storeId}`;
+  return { url: `${origin}/login?invite=${code}`, expiresAt: expiresAt.toISOString() };
 }
 
-function newStore(name, kakaoId = null) {
-  const now = new Date().toISOString();
-  return { id: `s_${randomBytes(6).toString("hex")}`, name, kakaoId, linkedAt: kakaoId && now, invite: null, createdAt: now };
+async function newStore(name, kakaoId = null, db = sql) {
+  const [store] = await db`
+    INSERT INTO stores (id, name, kakao_id, linked_at) VALUES (${`s_${randomBytes(6).toString("hex")}`}, ${name}, ${kakaoId}, ${kakaoId && new Date()})
+    RETURNING *`;
+  return store;
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const accounts = await load();
 
 switch (cmd) {
   case "create": {
     const name = args.join(" ").trim() || fail("매장 이름을 입력하세요.");
-    const store = newStore(name);
-    const { url, expiresAt } = newInvite(store);
-    accounts.stores.push(store);
-    await save(accounts);
+    const origin = inviteOrigin();
+    // 매장과 초대는 함께 생기거나 함께 없다
+    const { store, url, expiresAt } = await sql.begin(async (tx) => {
+      const store = await newStore(name, null, tx);
+      return { store, ...(await newInvite(tx, store.id, origin)) };
+    });
     console.log(`매장 ${store.id} "${name}" 생성\n초대 링크(1회용, ${expiresAt}까지): ${url}`);
     break;
   }
   case "invite": {
-    const store = findStore(accounts, args[0]);
-    const { url, expiresAt } = newInvite(store);
-    await save(accounts);
+    const origin = inviteOrigin();
+    const store = await findStore(args[0]);
+    const { url, expiresAt } = await newInvite(sql, store.id, origin);
     console.log(`초대 링크(1회용, ${expiresAt}까지): ${url}`);
-    if (store.kakaoId) console.log("이 링크로 새 카카오 계정이 연결되면 지금 연결된 계정은 끊깁니다.");
+    if (store.kakao_id) console.log("이 링크로 새 카카오 계정이 연결되면 지금 연결된 계정은 끊깁니다.");
     break;
   }
   case "list": {
-    if (!accounts.stores.length) console.log("매장이 없습니다.");
-    for (const s of accounts.stores) {
-      const link = s.kakaoId ? `연결됨(${s.kakaoId}, ${s.linkedAt})` : "연결 안 됨";
-      const invite = !s.invite ? "초대 없음" : Date.parse(s.invite.expiresAt) > Date.now() ? `초대 유효(${s.invite.expiresAt}까지)` : "초대 만료";
+    const stores = await sql`SELECT * FROM stores ORDER BY created_at`;
+    if (!stores.length) console.log("매장이 없습니다.");
+    for (const s of stores) {
+      const link = s.kakao_id ? `연결됨(${s.kakao_id}, ${s.linked_at.toISOString()})` : "연결 안 됨";
+      const invite = !s.invite_hash ? "초대 없음" : s.invite_expires_at > new Date() ? `초대 유효(${s.invite_expires_at.toISOString()}까지)` : "초대 만료";
       console.log(`${s.id}\t${s.name}\t${link}\t${invite}`);
     }
     break;
   }
   case "revoke-invite": {
-    findStore(accounts, args[0]).invite = null;
-    await save(accounts);
+    const store = await findStore(args[0]);
+    await sql`UPDATE stores SET invite_hash = NULL, invite_expires_at = NULL WHERE id = ${store.id}`;
     console.log("초대 링크를 취소했습니다.");
     break;
   }
   case "unlink": {
-    const store = findStore(accounts, args[0]);
-    store.kakaoId = null;
-    store.linkedAt = null;
-    await save(accounts);
+    const store = await findStore(args[0]);
+    await sql`UPDATE stores SET kakao_id = NULL, linked_at = NULL WHERE id = ${store.id}`;
     console.log("카카오 계정 연결을 해제했습니다. 새 관리자는 invite로 링크를 발급하세요.");
     break;
   }
   case "delete": {
-    const store = findStore(accounts, args[0]);
-    // 매장의 근무표(직원 개인정보)도 함께 지운다. DB 파일이 아직 없으면 지울 것도 없다
-    const db = process.env.SCHEDULES_DB?.replace(/^~\//, `${os.homedir()}/`);
-    let removed = 0;
-    if (db && existsSync(db)) {
-      const { DatabaseSync } = await import("node:sqlite");
-      const conn = new DatabaseSync(db);
-      // 서버가 아직 한 번도 열지 않은 DB면 테이블이 없다
-      if (conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schedules'").get()) {
-        removed = Number(conn.prepare("DELETE FROM schedules WHERE store_id = ?").run(store.id).changes);
-      }
-      conn.close();
-    } else if (!db) {
-      console.warn("SCHEDULES_DB가 없어 근무표는 지우지 않았습니다. 근무표가 있다면 SCHEDULES_DB를 설정하고 다시 실행하세요.");
-    }
-    accounts.stores = accounts.stores.filter((s) => s !== store);
-    await save(accounts);
+    const store = await findStore(args[0]);
+    // 매장의 근무표(직원 개인정보)·공유 링크는 ON DELETE CASCADE로 함께 지워진다. 개수만 먼저 센다
+    const removed = await sql.begin(async (tx) => {
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM schedules WHERE store_id = ${store.id}`;
+      await tx`DELETE FROM stores WHERE id = ${store.id}`;
+      return n;
+    });
     console.log(`매장 ${store.id} "${store.name}"과(와) 근무표 ${removed}개를 삭제했습니다.`);
     break;
   }
   case "dev-session": {
     if (process.env.NODE_ENV === "production") fail("NODE_ENV=production에서는 쓸 수 없습니다.");
     const name = args.join(" ").trim() || "개발용 매장";
-    let store = accounts.stores.find((s) => s.name === name && s.kakaoId?.startsWith("dev-"));
-    if (!store) {
-      store = newStore(name, `dev-${randomBytes(6).toString("hex")}`);
-      accounts.stores.push(store);
-      await save(accounts);
-    }
+    const [found] = await sql`SELECT * FROM stores WHERE name = ${name} AND kakao_id LIKE 'dev-%' LIMIT 1`;
+    const store = found ?? (await newStore(name, `dev-${randomBytes(6).toString("hex")}`));
     // src/lib/auth.ts의 sign("session", ...)과 같은 형식. '로그인 상태 유지'로 만들어 2시간 무활동 만료가 없다(14일)
     const now = Date.now();
-    const body = Buffer.from(JSON.stringify({ s: store.id, u: store.kakaoId, iat: now, lat: now, r: true })).toString("base64url");
+    const body = Buffer.from(JSON.stringify({ s: store.id, u: store.kakao_id, iat: now, lat: now, r: true })).toString("base64url");
     const mac = createHmac("sha256", env("SESSION_SECRET")).update(`session.${body}`).digest("base64url");
     console.log(`Cookie: ss_session=${body}.${mac}`);
     break;
   }
   default:
-    fail(USAGE);
+    console.error(USAGE);
+    process.exitCode = 1;
 }
+await sql.end();

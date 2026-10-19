@@ -9,7 +9,7 @@ const error = (status: number, message: string) => Response.json({ error: messag
 export async function GET(req: NextRequest, { params }: Ctx) {
   const store = await sessionStore(req);
   if (!store) return error(401, "로그인이 필요합니다.");
-  const schedule = getSchedule(store.id, (await params).id);
+  const schedule = await getSchedule(store.id, (await params).id);
   if (!schedule) return error(404, "근무표를 찾을 수 없습니다.");
   return Response.json(schedule, { headers: { "Cache-Control": "no-store" } });
 }
@@ -18,6 +18,6 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 export async function DELETE(req: NextRequest, { params }: Ctx) {
   const store = await sessionStore(req);
   if (!store) return error(401, "로그인이 필요합니다.");
-  if (!deleteSchedule(store.id, (await params).id)) return error(404, "근무표를 찾을 수 없습니다.");
+  if (!(await deleteSchedule(store.id, (await params).id))) return error(404, "근무표를 찾을 수 없습니다.");
   return new Response(null, { status: 204 });
 }
