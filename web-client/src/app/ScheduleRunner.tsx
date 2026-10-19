@@ -258,9 +258,11 @@ const StepNumber = ({ n }: { n: number }) => (
 
 interface IScheduleRunnerProps {
   initialInput: string;
+  /** STAFF_SHARE_BETA=1일 때만 '직원 공유 링크' 영역을 보인다 */
+  staffShareBeta?: boolean;
 }
 
-const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
+const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBeta = false }) => {
   // 폼과 JSON 탭은 text 하나를 공유한다. 폼은 text가 파싱될 때만 그 값을 보여 준다
   const [text, setText] = useState(initialInput);
   const [mode, setMode] = useState<"form" | "json">("form");
@@ -633,7 +635,14 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
       </dialog>
 
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-        <SavedSchedules refreshKey={listKey} currentId={saved?.id ?? null} onOpen={openSaved} onUnauthorized={toLogin} />
+        <SavedSchedules
+          refreshKey={listKey}
+          currentId={saved?.id ?? null}
+          onOpen={openSaved}
+          onUnauthorized={toLogin}
+          shareBeta={staffShareBeta}
+          onConfirm={setConfirm}
+        />
         {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
         <section aria-labelledby="step-input" className="card print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">

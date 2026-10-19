@@ -8,13 +8,13 @@ type View = "month" | "week" | "day";
 type Person = { id: string; name: string };
 
 const DAY_MS = 86_400_000;
-const addDays = (d: string, n: number) => new Date(toUtc(d) + n * DAY_MS).toISOString().slice(0, 10);
-const weekday = (d: string) => new Date(toUtc(d)).getUTCDay();
+export const addDays = (d: string, n: number) => new Date(toUtc(d) + n * DAY_MS).toISOString().slice(0, 10);
+export const weekday = (d: string) => new Date(toUtc(d)).getUTCDay();
 const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일 ${WEEKDAYS[weekday(d)]}요일`;
 // 주말 글자색: 일 = danger, 토 = accent (UI 가이드)
 const weekendText = (d: string) => (weekday(d) === 0 ? "text-danger" : weekday(d) === 6 ? "text-accent" : "");
 /** 오늘(브라우저 현지 날짜) */
-const todayIso = () => {
+export const todayIso = () => {
   const t = new Date();
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 };

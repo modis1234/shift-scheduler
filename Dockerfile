@@ -4,7 +4,7 @@
 FROM node:22-bookworm-slim AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# 웹 빌드. page.tsx가 빌드 시 ../algorithm-engine/sample_input.json을 읽는다
+# 웹 빌드. DB(DATABASE_URL)는 실행 때만 필요하다
 FROM base AS web
 WORKDIR /app/web-client
 COPY web-client/package.json web-client/package-lock.json ./

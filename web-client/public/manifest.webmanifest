@@ -1,0 +1,13 @@
+{
+  "name": "근무표 (베타)",
+  "short_name": "근무표",
+  "display": "standalone",
+  "scope": "/s/",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/app-icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/app-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

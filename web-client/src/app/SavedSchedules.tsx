@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { formatDate } from "./InputForm";
 
 export type SavedStatus = "draft" | "published" | "unpublished";
@@ -34,10 +34,137 @@ interface ISavedSchedulesProps {
   onOpen: (id: string) => void;
   /** 401: 로그인 시간이 지남 */
   onUnauthorized: () => void;
+  /** STAFF_SHARE_BETA가 켜졌을 때만 '직원 공유 링크' 줄을 보인다 */
+  shareBeta: boolean;
+  /** 화면 공용 확인 대화상자(ScheduleRunner) */
+  onConfirm: (c: IConfirm) => void;
 }
 
+interface IConfirm {
+  title: string;
+  body: string;
+  label: string;
+  onConfirm: () => void;
+}
+
+interface IShareLinkProps {
+  onConfirm: (c: IConfirm) => void;
+  onUnauthorized: () => void;
+}
+
+/** '저장된 근무표' 카드 아래 '직원 공유 링크' 줄 (기획서 7-3) */
+const ShareLink = memo<IShareLinkProps>(({ onConfirm, onUnauthorized }) => {
+  // null = 불러오는 중, "" = 링크 없음
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copyMsg, setCopyMsg] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const apply = (code: string | null) => setUrl(code ? `${location.origin}/s/${code}` : "");
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/share-link")
+      .then(async (r) => {
+        if (r.status === 401) return onUnauthorized();
+        if (!r.ok) throw new Error();
+        const { code } = (await r.json()) as { code: string | null };
+        if (alive) apply(code);
+      })
+      .catch(() => alive && setError("직원 공유 링크를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요."));
+    return () => {
+      alive = false;
+    };
+  }, [onUnauthorized]);
+
+  const create = async () => {
+    setBusy(true);
+    setError("");
+    setCopyMsg("");
+    try {
+      const r = await fetch("/api/share-link", { method: "POST" });
+      if (r.status === 401) return onUnauthorized();
+      if (!r.ok) throw new Error();
+      apply(((await r.json()) as { code: string }).code);
+    } catch {
+      setError("링크를 만들지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = () =>
+    // http 주소 등에서는 navigator.clipboard가 없으므로 실패로 처리한다
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(url ?? ""))
+      .then(
+        () => setCopyMsg("복사했습니다"),
+        () => {
+          inputRef.current?.select();
+          setCopyMsg("복사하지 못했습니다. 주소를 직접 복사해 주세요.");
+        },
+      );
+
+  return (
+    <div className="border-t border-border px-4 py-4 sm:px-6">
+      <h3 className="subhead">직원 공유 링크</h3>
+      {url === null && !error ? (
+        <div className="mt-2 h-9 animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />
+      ) : url ? (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              ref={inputRef}
+              readOnly
+              value={url}
+              aria-label="직원 공유 링크 주소"
+              onFocus={(e) => e.target.select()}
+              className="input min-w-0 flex-1 basis-64 font-mono text-xs"
+            />
+            <button type="button" onClick={copy} className="btn btn-secondary btn-sm">
+              복사
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                onConfirm({
+                  title: "링크 새로 만들기",
+                  body: "새 링크를 만들면 지금 링크는 바로 열리지 않습니다. 새로 만들까요?",
+                  label: "새로 만들기",
+                  onConfirm: () => void create(),
+                })
+              }
+              className="btn btn-secondary btn-sm"
+            >
+              링크 새로 만들기
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted">게시된 근무표만 직원에게 보입니다.</p>
+        </>
+      ) : (
+        url === "" && (
+          <button type="button" disabled={busy} onClick={() => void create()} className="btn btn-secondary btn-sm mt-2">
+            링크 만들기
+          </button>
+        )
+      )}
+      <p aria-live="polite" className="mt-1 text-xs">
+        {copyMsg}
+      </p>
+      {error && (
+        <p role="alert" className="alert alert-danger mt-2">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+});
+ShareLink.displayName = "ShareLink";
+
 /** 메인 위쪽 '저장된 근무표' 목록 */
-const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOpen, onUnauthorized }) => {
+const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOpen, onUnauthorized, shareBeta, onConfirm }) => {
   const [items, setItems] = useState<ISavedSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -103,6 +230,7 @@ const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOp
           </ul>
         )}
       </div>
+      {shareBeta && <ShareLink onConfirm={onConfirm} onUnauthorized={onUnauthorized} />}
     </section>
   );
 });

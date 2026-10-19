@@ -21,7 +21,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 export async function GET(req: NextRequest) {
   const store = await sessionStore(req);
   if (!store) return error(401, "로그인이 필요합니다.");
-  return Response.json(listSchedules(store.id), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(await listSchedules(store.id), { headers: { "Cache-Control": "no-store" } });
 }
 
 /** POST /api/schedules {input, result} → 201 {id}. result.status가 SUCCESS일 때만 */
@@ -50,6 +50,6 @@ export async function POST(req: NextRequest) {
   }
   const { start_date: startDate, end_date: endDate } = period as { start_date: string; end_date: string };
 
-  const id = createSchedule(store.id, startDate, endDate, JSON.stringify(input), JSON.stringify(result));
+  const id = await createSchedule(store.id, startDate, endDate, input, result);
   return Response.json({ id }, { status: 201 });
 }

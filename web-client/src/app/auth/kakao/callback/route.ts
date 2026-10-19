@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { findInvitedStore, readAccounts, updateAccounts, type Store } from "@/lib/accounts";
+import { findStoreByKakaoId, linkInvitedStore, type Store } from "@/lib/accounts";
 import {
   clearStateCookie,
   clientIp,
@@ -60,19 +60,8 @@ async function fetchKakaoId(code: string): Promise<string> {
 
 /** 초대 코드가 있으면 그 매장에 연결(1회용), 없으면 연결된 매장을 찾는다. */
 async function findOrLinkStore(kakaoId: string, invite: string | null): Promise<Store | LoginError> {
-  if (!invite) return (await readAccounts()).stores.find((s) => s.kakaoId === kakaoId) ?? "not_registered";
-  return updateAccounts<Store | LoginError>((accounts) => {
-    const store = findInvitedStore(accounts, invite);
-    if (!store) return { changed: false, result: "invite_invalid" };
-    if (accounts.stores.some((s) => s.kakaoId === kakaoId && s.id !== store.id)) {
-      return { changed: false, result: "already_linked" };
-    }
-    // 이전 관리자 연결은 덮어써서 끊긴다(그 세션도 readSession에서 무효)
-    store.kakaoId = kakaoId;
-    store.linkedAt = new Date().toISOString();
-    store.invite = null;
-    return { changed: true, result: store };
-  });
+  if (!invite) return (await findStoreByKakaoId(kakaoId)) ?? "not_registered";
+  return linkInvitedStore(invite, kakaoId);
 }
 
 /** GET /auth/kakao/callback. 성공: 세션 쿠키 + next로 302, 실패: /login?error=<코드>[&invite=] */

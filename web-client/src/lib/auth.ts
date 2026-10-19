@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { readAccounts, type Store } from "./accounts";
+import { getStore, type Store } from "./accounts";
 
 // 서버 전용(node:crypto, 계정 파일). middleware도 runtime: "nodejs"로 이 모듈을 쓴다
 
@@ -14,6 +14,9 @@ export const STATE_MS = 10 * 60 * 1000;
 export type Session = { s: string; u: string; iat: number; lat: number; r: boolean };
 /** state 쿠키 내용. 카카오 왕복 동안 next·초대 코드·로그인 상태 유지를 함께 보관 */
 export type LoginState = { st: string; next: string; invite: string | null; r: boolean; exp: number };
+
+/** 직원 공유 링크 베타(STAFF_SHARE_BETA=1일 때만 켜짐) */
+export const staffShareBeta = () => process.env.STAFF_SHARE_BETA === "1";
 
 export function env(name: string): string {
   const v = process.env[name];
@@ -50,13 +53,13 @@ export function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-/** 서명·만료를 확인하고, 매장이 지금도 그 카카오 회원번호에 연결돼 있는지 계정 파일에서 확인한다(관리자 교체·연결 해제 즉시 반영). */
+/** 서명·만료를 확인하고, 매장이 지금도 그 카카오 회원번호에 연결돼 있는지 DB에서 확인한다(관리자 교체·연결 해제 즉시 반영). */
 export async function readSession(token: string | undefined): Promise<{ session: Session; store: Store } | null> {
   if (!token) return null;
   const session = verify<Session>("session", token);
   const now = Date.now();
   if (!session || now - session.iat > MAX_MS || (!session.r && now - session.lat > IDLE_MS)) return null;
-  const store = (await readAccounts()).stores.find((s) => s.id === session.s);
+  const store = await getStore(session.s);
   if (!store || store.kakaoId !== session.u) return null;
   return { session, store };
 }

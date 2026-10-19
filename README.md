@@ -9,14 +9,14 @@
 - Google OR-Tools CP-SAT 엔진으로 법정·운영 제약을 만족하는 근무표 생성
 - 직원별 표와 월·주·일 달력 보기, 직원·근무조 필터, A4 가로 인쇄/PDF 저장
 - 기간 경계의 연속 근무일·주간 근로시간·마지막 근무 종료·순환 위상을 다음 기간 입력으로 전달
-- 생성 결과를 SQLite에 저장하고 다시 열기·삭제·게시·게시 취소
+- 생성 결과를 Postgres(Supabase)에 저장하고 다시 열기·삭제·게시·게시 취소
 - 같은 매장·같은 기간에는 하나의 근무표만 게시(새 근무표를 게시하면 이전 게시본은 자동으로 게시 취소)
 
 ```
 shift-scheduler/
 ├── web-client/          # Next.js 15 (App Router, React 19, TypeScript, Tailwind CSS 4)
 │   ├── src/app/         # 입력·결과·달력 UI와 API 라우트
-│   ├── src/lib/         # 인증·계정·SQLite 근무표 저장소
+│   ├── src/lib/         # 인증·계정·근무표 저장소(Postgres)
 │   └── scripts/         # 매장 계정·초대 링크 관리
 └── algorithm-engine/    # Python 3 + Google OR-Tools (CP-SAT)
     ├── requirements.txt
@@ -29,7 +29,7 @@ shift-scheduler/
 
 `./dev.sh [포트]`: 엔진 venv와 web-client 의존성이 없으면 만들고 개발 서버를 띄운다(기본 3000). 아래는 각각 따로 실행하는 방법이다.
 
-Node.js 22 이상(`node:sqlite` 사용), Python 3, 카카오 애플리케이션 설정이 필요하다. 먼저 `web-client/.env.local`에 아래 환경변수를 설정한다.
+Node.js 22 이상, Python 3, Postgres(운영은 Supabase, 로컬은 Docker 등), 카카오 애플리케이션 설정이 필요하다. 먼저 `web-client/.env.local`에 아래 환경변수를 설정한다(`web-client/.env.example` 참고).
 
 ```dotenv
 KAKAO_REST_API_KEY=...
@@ -37,11 +37,11 @@ KAKAO_CLIENT_SECRET=...
 KAKAO_REDIRECT_URI=http://localhost:3000/auth/kakao/callback
 KAKAO_LOGOUT_REDIRECT_URI=http://localhost:3000/login
 SESSION_SECRET=32자 이상의 임의 문자열
-ACCOUNTS_FILE=/절대/경로/accounts.json
-SCHEDULES_DB=/절대/경로/schedules.db
+DATABASE_URL=postgresql://…   # 아래 [데이터베이스](#데이터베이스-postgres--supabase). 로컬 Postgres는 끝에 ?sslmode=disable
+STAFF_SHARE_BETA=1   # 선택: 직원 공유 링크(/s/<코드>) 베타. 1이 아니면 꺼짐
 ```
 
-그다음 개발용 매장과 세션을 만들거나, 아래 [로그인](#로그인-카카오) 절차로 매장·초대 링크를 만든다.
+그다음 [데이터베이스](#데이터베이스-postgres--supabase)에 마이그레이션을 적용하고, 개발용 매장과 세션을 만들거나, 아래 [로그인](#로그인-카카오) 절차로 매장·초대 링크를 만든다.
 
 ```bash
 cd web-client
@@ -77,7 +77,7 @@ npm run dev   # http://localhost:3000
 
 `/login`, `/auth/*`, `/api/invite`, 정적 파일을 뺀 모든 페이지·API는 로그인이 필요하다(기획: `docs/planning/login.md`). `web-client/.env.local`에
 `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI`(`…/auth/kakao/callback`), `KAKAO_LOGOUT_REDIRECT_URI`(`…/login`),
-`SESSION_SECRET`(32자 이상, 바꾸면 모든 세션이 끊김), `ACCOUNTS_FILE`(계정 JSON 경로, Docker에서는 볼륨)을 둔다. `KAKAO_API_BASE`는 가짜 카카오 서버로 테스트할 때만 설정한다(localhost·127.0.0.1·[::1]만 허용).
+`SESSION_SECRET`(32자 이상, 바꾸면 모든 세션이 끊김), `DATABASE_URL`을 둔다. `KAKAO_API_BASE`는 가짜 카카오 서버로 테스트할 때만 설정한다(localhost·127.0.0.1·[::1]만 허용).
 
 매장 계정은 운영 담당자가 `web-client`에서 스크립트로 관리한다. 초대 링크는 1회용·7일이고, 링크로 카카오 로그인한 계정이 그 매장에 연결된다.
 
@@ -91,11 +91,33 @@ node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
 node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
 ```
 
-근무표 저장·게시(`/api/schedules`)는 Node 내장 SQLite(`node:sqlite`) 파일에 입력과 결과를 함께 저장한다. 경로는 `SCHEDULES_DB`(기본값 없음, Docker에서는 볼륨, 직원 개인정보 포함)이고, 시작 시 나오는 `ExperimentalWarning: SQLite`는 정상이다. 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `accounts.mjs delete`는 그 매장의 근무표도 함께 지운다.
+근무표 저장·게시(`/api/schedules`)는 생성 입력과 결과를 Postgres에 함께 저장한다(직원 개인정보 포함). 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `accounts.mjs delete`는 그 매장의 근무표·직원 공유 링크도 함께 지운다.
+
+### 데이터베이스 (Postgres / Supabase)
+
+매장 계정·근무표·직원 공유 링크는 Postgres 표 3개(`stores`, `schedules`, `share_links`)에 있다. 서버만 `DATABASE_URL`로 직접 접속하고(npm `postgres`), 브라우저는 DB에 붙지 않는다. 스키마는 `web-client/db/migrations/`의 SQL이며 앱이 자동으로 실행하지 않으므로 처음 한 번 직접 적용한다. 모든 표에 RLS를 켜 두어 Supabase Data API(anon 키)로는 읽히지 않는다.
+
+`DATABASE_URL`에 `sslmode`가 없으면 SSL을 필수로 접속한다. SSL이 없는 로컬 Postgres는 끝에 `?sslmode=disable`을 붙인다.
+
+**Supabase 프로젝트 만들고 연결하기**
+
+1. [supabase.com](https://supabase.com) → New project. 데이터베이스 비밀번호를 정해 따로 보관한다(잊으면 Project Settings → Database에서 재설정).
+2. 프로젝트 화면 위쪽 **Connect** → Connection string에서 **Session pooler**(포트 5432) 주소를 복사한다. 서버리스가 아니므로 Session pooler나 Direct connection을 쓴다.
+3. `web-client/.env.local`에 `DATABASE_URL=<복사한 주소>`를 넣고 `[YOUR-PASSWORD]` 자리를 1의 비밀번호로 바꾼다(비밀번호에 `@`·`#` 등이 있으면 URL 인코딩).
+4. 왼쪽 메뉴 **SQL Editor** → New query에 `web-client/db/migrations/001_init.sql` 내용을 붙여 넣고 Run. psql이 있으면 `psql "$DATABASE_URL" -f web-client/db/migrations/001_init.sql`도 된다.
+5. `cd web-client && node --env-file=.env.local scripts/accounts.mjs create "OO매장"`으로 매장과 초대 링크를 만든다.
+
+로컬에서 Supabase 없이 확인할 때:
+
+```bash
+docker run -d --name shift-pg -e POSTGRES_PASSWORD=dev -p 54329:5432 postgres:17
+docker exec -i shift-pg psql -U postgres < web-client/db/migrations/001_init.sql
+# .env.local: DATABASE_URL=postgresql://postgres:dev@localhost:54329/postgres?sslmode=disable
+```
 
 ### 주요 API
 
-모든 API는 `/api/invite`를 제외하고 로그인 세션이 필요하며, 근무표 API는 현재 로그인한 매장의 데이터에만 접근한다.
+모든 API는 `/api/invite`·`/api/s/:code`를 제외하고 로그인 세션이 필요하며, 근무표 API는 현재 로그인한 매장의 데이터에만 접근한다.
 
 | 메서드·경로 | 기능 |
 |---|---|
@@ -107,6 +129,9 @@ node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테�
 | `POST /api/schedules/:id/unpublish` | 게시 취소 |
 | `DELETE /api/schedules/:id` | 저장된 근무표 삭제 |
 | `GET /api/me` | 현재 로그인한 매장 조회 |
+| `GET /api/share-link` | 직원 공유 링크 조회(`STAFF_SHARE_BETA=1`일 때만) |
+| `POST /api/share-link` | 직원 공유 링크 만들기·새로 만들기(이전 링크는 바로 무효) |
+| `GET /api/s/:code` | 게시된 근무표 직원용 조회(로그인 없음, 이름·근무·휴가만) |
 
 ## 배포 (Docker)
 
@@ -117,16 +142,12 @@ node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테�
 REV=$(git rev-parse --short HEAD)
 SRC=$(mktemp -d) && git archive HEAD | tar -x -C "$SRC"
 docker build --build-arg GIT_REVISION=$REV -t shift-scheduler:$REV "$SRC"
-docker volume create shift-scheduler-data
 docker run -d --name shift-scheduler -p 3000:3000 \
   --env-file /절대/경로/production.env \
-  -e ACCOUNTS_FILE=/data/accounts.json \
-  -e SCHEDULES_DB=/data/schedules.db \
-  -v shift-scheduler-data:/data \
   shift-scheduler:$REV
 ```
 
-`production.env`에는 카카오 관련 환경변수와 `SESSION_SECRET`을 둔다. `ACCOUNTS_FILE`과 `SCHEDULES_DB`에는 계정 식별자와 직원 근무 정보가 있으므로 컨테이너 밖의 영속 볼륨에 보관하고 백업·접근 권한을 관리한다.
+`production.env`에는 카카오 관련 환경변수, `SESSION_SECRET`, `DATABASE_URL`을 둔다. 직원 공유 링크 베타를 켜려면 `STAFF_SHARE_BETA=1`을 추가한다. 데이터는 모두 Postgres에 있으므로 컨테이너에 볼륨은 필요 없다. DB에는 계정 식별자와 직원 근무 정보가 있으므로 Supabase 백업과 비밀번호·접속 문자열 관리에 신경 쓴다.
 
 배포 후 확인: 비로그인 `GET /login` → 200, `GET /` → `/login` 리다이렉트, `POST /api/schedule` → 401. 카카오 로그인 후 세션 쿠키를 포함해 `POST /api/schedule`에 `algorithm-engine/sample_input.json` → 200 `SUCCESS`, `'{bad'` → 400.
 롤백은 이전 커밋 태그 이미지로 컨테이너를 다시 띄운다. 배포 호스트·레지스트리는 아직 정하지 않았다.
