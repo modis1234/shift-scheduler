@@ -151,7 +151,34 @@ docker run -d --name shift-scheduler -p 3000:3000 \
 `production.env`에는 카카오 관련 환경변수, `SESSION_SECRET`, `DATABASE_URL`을 둔다. 직원 공유 링크 베타를 켜려면 `STAFF_SHARE_BETA=1`을 추가한다. 데이터는 모두 Postgres에 있으므로 컨테이너에 볼륨은 필요 없다. DB에는 계정 식별자와 직원 근무 정보가 있으므로 Supabase 백업과 비밀번호·접속 문자열 관리에 신경 쓴다.
 
 배포 후 확인: 비로그인 `GET /login` → 200, `GET /` → `/login` 리다이렉트, `POST /api/schedule` → 401. 카카오 로그인 후 세션 쿠키를 포함해 `POST /api/schedule`에 `algorithm-engine/sample_input.json` → 200 `SUCCESS`, `'{bad'` → 400.
-롤백은 이전 커밋 태그 이미지로 컨테이너를 다시 띄운다. 배포 호스트·레지스트리는 아직 정하지 않았다.
+롤백은 이전 커밋 태그 이미지로 컨테이너를 다시 띄운다.
+
+### 배포 (Fly.io)
+
+운영 호스트는 Fly.io 도쿄(`nrt`) 리전이다(2026-10-19 결정). Supabase와 같은 지역이고 HTTPS 인증서를 자동으로 발급한다. 설정은 루트 `fly.toml`(1GB 머신 1대 상시 실행, `/login` 헬스체크).
+
+처음 한 번:
+
+```bash
+fly auth login
+fly apps create <앱이름>          # fly.toml의 app 값도 같은 이름으로 바꾼다
+fly secrets set DATABASE_URL=... SESSION_SECRET=... \
+  KAKAO_REST_API_KEY=... KAKAO_CLIENT_SECRET=... \
+  KAKAO_REDIRECT_URI=https://<도메인>/auth/kakao/callback \
+  KAKAO_LOGOUT_REDIRECT_URI=https://<도메인>/login
+fly certs add <도메인>            # 안내되는 A/AAAA(또는 CNAME) 레코드를 도메인 DNS에 등록
+```
+
+카카오 개발자 콘솔에도 운영 도메인과 Redirect URI를 추가한다. `DATABASE_URL`은 Supabase Session pooler 주소를 쓴다.
+
+배포: 작업 트리가 dirty일 수 있으므로 커밋된 소스에서 올린다.
+
+```bash
+SRC=$(mktemp -d) && git archive HEAD | tar -x -C "$SRC"
+fly deploy "$SRC" --config "$PWD/fly.toml" --build-arg GIT_REVISION=$(git rev-parse --short HEAD)
+```
+
+확인은 위 '배포 후 확인'과 같다(`https://<도메인>` 기준). 롤백은 `fly releases`에서 이전 이미지를 골라 `fly deploy --image <이미지>`로 다시 올린다.
 
 ## 엔진 규칙 매핑
 
