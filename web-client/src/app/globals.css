@@ -155,9 +155,9 @@ body {
     letter-spacing: 0.01em;
   }
 
-  /* 떠 있는 유리 면: 헤더(72%)·생성 바(80%) */
+  /* 떠 있는 유리 면: 헤더(88%)·생성 바(80%) */
   .app-header {
-    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
@@ -351,6 +351,12 @@ body {
     font-weight: 700;
     letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
+  }
+  /* 390 폭에서 인건비 금액이 한 줄에 들어가게 */
+  @media (max-width: 40rem) {
+    .metric-value {
+      font-size: 20px;
+    }
   }
 
   .data-table th[scope="col"] {

@@ -817,7 +817,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput }) => {
                 ).map(([k, v]) => (
                   <div key={k} className="metric px-4 py-3">
                     <dt className="text-xs font-medium text-muted">{k}</dt>
-                    <dd className="metric-value mt-1 break-all">{v}</dd>
+                    <dd className="metric-value mt-1 whitespace-nowrap">{v}</dd>
                   </div>
                 ))}
               </dl>
