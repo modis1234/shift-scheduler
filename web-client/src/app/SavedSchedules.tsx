@@ -31,6 +31,8 @@ interface ISavedSchedulesProps {
   refreshKey: number;
   /** 지금 화면에 열린 근무표 id */
   currentId: string | null;
+  /** 현재 서버에서 불러오는 근무표 id */
+  openingId: string | null;
   onOpen: (id: string) => void;
   /** 401: 로그인 시간이 지남 */
   onUnauthorized: () => void;
@@ -38,6 +40,8 @@ interface ISavedSchedulesProps {
   shareBeta: boolean;
   /** 화면 공용 확인 대화상자(ScheduleRunner) */
   onConfirm: (c: IConfirm) => void;
+  /** 빈 목록에서 근무표 만들기 탭으로 이동 */
+  onCreate: () => void;
 }
 
 interface IConfirm {
@@ -164,7 +168,7 @@ const ShareLink = memo<IShareLinkProps>(({ onConfirm, onUnauthorized }) => {
 ShareLink.displayName = "ShareLink";
 
 /** 메인 위쪽 '저장된 근무표' 목록 */
-const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOpen, onUnauthorized, shareBeta, onConfirm }) => {
+const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, openingId, onOpen, onUnauthorized, shareBeta, onConfirm, onCreate }) => {
   const [items, setItems] = useState<ISavedSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -201,9 +205,10 @@ const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOp
             ))}
           </ul>
         ) : items.length === 0 ? (
-          <p className="rounded-[var(--radius)] border border-dashed border-border-strong px-5 py-6 text-center text-sm text-muted">
-            저장된 근무표가 없습니다. 근무표를 만든 뒤 [저장]을 눌러 주세요.
-          </p>
+          <div className="rounded-[var(--radius)] border border-dashed border-border-strong px-5 py-6 text-center text-sm text-muted">
+            <p>저장된 근무표가 없습니다. [근무표 만들기] 탭에서 근무표를 만든 뒤 저장해 주세요.</p>
+            <button type="button" onClick={onCreate} className="btn btn-secondary btn-sm mt-3">근무표 만들기</button>
+          </div>
         ) : (
           <ul className="max-h-72 space-y-1 overflow-y-auto">
             {items.map((s) => {
@@ -213,14 +218,13 @@ const SavedSchedules = memo<ISavedSchedulesProps>(({ refreshKey, currentId, onOp
                   <button
                     type="button"
                     onClick={() => onOpen(s.id)}
+                    disabled={openingId !== null}
                     aria-current={s.id === currentId ? "true" : undefined}
-                    className={`flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--radius)] border px-4 py-2 text-left text-sm transition-[background-color,box-shadow] hover:bg-surface-2 hover:shadow-[var(--shadow-xs)] ${
+                    className={`flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--radius)] border px-4 py-2 text-left text-sm transition-[background-color,box-shadow] hover:bg-surface-2 hover:shadow-[var(--shadow-xs)] disabled:cursor-wait disabled:opacity-60 ${
                       s.id === currentId ? "border-accent bg-accent-soft" : "border-border"
                     }`}
                   >
-                    <span className="font-semibold tabular-nums">
-                      {formatDate(s.startDate)} ~ {formatDate(s.endDate)}
-                    </span>
+                    <span className="font-semibold tabular-nums">{openingId === s.id ? "근무표 여는 중…" : `${formatDate(s.startDate)} ~ ${formatDate(s.endDate)}`}</span>
                     <span className={`badge ${v.badge}`}>{v.label}</span>
                     <span className="text-xs text-muted sm:ml-auto">만든 날 {madeOn(s.createdAt)}</span>
                   </button>

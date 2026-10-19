@@ -3,6 +3,7 @@
 import Image from "next/image";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InputForm, { formatDate, validateInput } from "./InputForm";
+import ManagerCalendar from "./ManagerCalendar";
 import ScheduleCalendar from "./ScheduleCalendar";
 import SavedSchedules, { SAVED_STATUS_VIEW, type SavedStatus } from "./SavedSchedules";
 
@@ -50,6 +51,12 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // globals.css의 시프트 팔레트 클래스
 const SHIFT_COLORS = ["shift-0", "shift-1", "shift-2", "shift-3", "shift-4", "shift-5"];
 const EMPLOYMENT_LABEL: Record<string, string> = { Full_Time: "정규직", Part_Time: "파트타임" };
+const MAIN_TABS = [
+  { id: "create", label: "근무표 만들기" },
+  { id: "manage", label: "근무표 관리" },
+  { id: "personal", label: "내 일정" },
+] as const;
+type MainTab = (typeof MAIN_TABS)[number]["id"];
 
 // 날짜는 모두 UTC 자정 기준으로 계산해 시간대에 따라 하루가 밀리지 않게 한다
 const toUtc = (d: string) => Date.parse(`${d}T00:00:00Z`);
@@ -263,8 +270,16 @@ interface IScheduleRunnerProps {
 }
 
 const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBeta = false }) => {
+  const [activeTab, setActiveTab] = useState<MainTab>("create");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const savedLoadVersionRef = useRef(0);
+  const openSavedErrorRef = useRef<HTMLParagraphElement>(null);
+  const [openingSavedId, setOpeningSavedId] = useState<string | null>(null);
+  const [openSavedError, setOpenSavedError] = useState("");
   // 폼과 JSON 탭은 text 하나를 공유한다. 폼은 text가 파싱될 때만 그 값을 보여 준다
   const [text, setText] = useState(initialInput);
+  // 저장 항목을 열 때 현재 입력을 잃는지 판단하는 기준. 생성·열기·저장 성공 때 갱신한다.
+  const [cleanText, setCleanText] = useState(initialInput);
   const [mode, setMode] = useState<"form" | "json">("form");
   const [inputError, setInputError] = useState<string | null>(null);
   // 생성이 막혔을 때 스크린리더에만 읽어 줄 세부 오류
@@ -292,6 +307,25 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
   const [notice, setNotice] = useState<string | null>(null);
   // 결과와 짝이 맞는 입력. 생성 후 textarea를 고쳐도 그리드·다음 기간 계산은 실제로 보낸 입력 기준
   const [run, setRun] = useState<{ input: IEngineInput; result: IEngineResult } | null>(null);
+
+  const selectMainTab = useCallback((tab: MainTab, focus = false) => {
+    setActiveTab(tab);
+    if (focus) {
+      const index = MAIN_TABS.findIndex((item) => item.id === tab);
+      requestAnimationFrame(() => tabRefs.current[index]?.focus());
+    }
+  }, []);
+
+  const onMainTabKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next = index;
+    if (event.key === "ArrowLeft") next = (index + MAIN_TABS.length - 1) % MAIN_TABS.length;
+    else if (event.key === "ArrowRight") next = (index + 1) % MAIN_TABS.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = MAIN_TABS.length - 1;
+    else return;
+    event.preventDefault();
+    selectMainTab(MAIN_TABS[next].id, true);
+  }, [selectMainTab]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value), []);
   const handleFormChange = useCallback((next: Record<string, unknown>) => setText(JSON.stringify(next, null, 2)), []);
@@ -361,6 +395,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
         return;
       }
       setRun({ input: input as IEngineInput, result: data as IEngineResult });
+      setCleanText(text);
       setSaved(null);
     } catch {
       setRequestError("서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
@@ -414,28 +449,53 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
     }
   }, []);
 
-  /** 저장된 근무표 열기: 입력 폼과 결과(직원별 표/달력)를 채운다 */
-  const openSaved = useCallback(
+  /** 저장된 근무표를 실제로 불러와 입력 폼과 결과(직원별 표/달력)를 채운다. */
+  const loadSaved = useCallback(
     async (id: string) => {
+      const version = ++savedLoadVersionRef.current;
+      setOpeningSavedId(id);
+      setOpenSavedError("");
       setSaveMsg(null);
       try {
         const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`);
+        if (version !== savedLoadVersionRef.current) return;
         if (res.status === 401) return toLogin();
         if (!res.ok) throw new Error();
         const data = (await res.json()) as { id: string; status: SavedStatus; input: IEngineInput; result: IEngineResult };
-        setText(JSON.stringify(data.input, null, 2));
+        if (version !== savedLoadVersionRef.current) return;
+        const nextText = JSON.stringify(data.input, null, 2);
+        setActiveTab("create");
+        setText(nextText);
+        setCleanText(nextText);
         setRun({ input: data.input, result: data.result });
         setSaved({ id: data.id, status: data.status });
         setNotice(null);
         setRequestError(null);
         setInputError(null);
+        requestAnimationFrame(() => resultHeadingRef.current?.focus());
       } catch {
-        setSaveMsg({ kind: "danger", text: "근무표를 불러오지 못했습니다. 목록을 새로 고친 뒤 다시 시도해 주세요." });
+        if (version !== savedLoadVersionRef.current) return;
+        setOpenSavedError("근무표를 불러오지 못했습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.");
         setListKey((k) => k + 1);
+        requestAnimationFrame(() => openSavedErrorRef.current?.focus());
+      } finally {
+        if (version === savedLoadVersionRef.current) setOpeningSavedId(null);
       }
     },
     [toLogin],
   );
+
+  /** 저장하지 않은 입력·결과가 있으면 확인한 뒤 저장된 근무표를 연다. */
+  const openSaved = useCallback((id: string) => {
+    const needsConfirm = text !== cleanText || (!!run && !saved);
+    if (!needsConfirm) return void loadSaved(id);
+    setConfirm({
+      title: "저장된 근무표 열기",
+      body: "현재 입력과 저장하지 않은 결과가 바뀝니다. 저장된 근무표를 열까요?",
+      label: "열기",
+      onConfirm: () => void loadSaved(id),
+    });
+  }, [cleanText, loadSaved, run, saved, text]);
 
   /** 저장·게시·게시 취소·삭제 요청. 성공하면 목록을 다시 불러온다 */
   const callSaved = useCallback(
@@ -462,6 +522,7 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
     callSaved("/api/schedules", "POST", { input: run.input, result: run.result }, "근무표를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요. 화면의 근무표는 그대로 있습니다.", async (res) => {
       const { id } = (await res.json()) as { id: string };
       setSaved({ id, status: "draft" });
+      setCleanText(JSON.stringify(run.input, null, 2));
       setSaveMsg({ kind: "info", text: "근무표를 저장했습니다." });
     });
 
@@ -559,10 +620,12 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="chip">
-              <span className="text-muted">근무 기간</span>
-              <span className="font-semibold tabular-nums">{periodLabel}</span>
-            </p>
+            {activeTab === "create" && (
+              <p className="chip">
+                <span className="text-muted">근무 기간</span>
+                <span className="font-semibold tabular-nums">{periodLabel}</span>
+              </p>
+            )}
             {storeName && (
               <div className="flex items-center gap-3 sm:border-l sm:border-border sm:pl-4">
                 <span className="text-xs text-muted">{storeName}</span>
@@ -579,6 +642,27 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
           </div>
         </div>
       </header>
+
+      <nav aria-label="메인 기능" className="main-tabs-shell print:hidden">
+        <div role="tablist" aria-label="메인 기능" className="main-tabs mx-auto max-w-[1600px] px-4 sm:px-8">
+          {MAIN_TABS.map((tab, index) => (
+            <button
+              key={tab.id}
+              ref={(element) => { tabRefs.current[index] = element; }}
+              id={`main-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`main-panel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => selectMainTab(tab.id)}
+              onKeyDown={(event) => onMainTabKeyDown(event, index)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {/* 게시·삭제 확인. 로그아웃 확인과 같은 규칙(배경 클릭 무시, Esc는 취소, 처음 포커스 [취소]) */}
       <dialog
@@ -635,18 +719,40 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
       </dialog>
 
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-        <SavedSchedules
-          refreshKey={listKey}
-          currentId={saved?.id ?? null}
-          onOpen={openSaved}
-          onUnauthorized={toLogin}
-          shareBeta={staffShareBeta}
-          onConfirm={setConfirm}
-        />
-        {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
+        <div
+          id="main-panel-manage"
+          role="tabpanel"
+          aria-labelledby="main-tab-manage"
+          hidden={activeTab !== "manage"}
+          className="space-y-4"
+        >
+          {openSavedError && <p ref={openSavedErrorRef} tabIndex={-1} role="alert" className="alert alert-danger">{openSavedError}</p>}
+          <SavedSchedules
+            refreshKey={listKey}
+            currentId={saved?.id ?? null}
+            openingId={openingSavedId}
+            onOpen={openSaved}
+            onUnauthorized={toLogin}
+            shareBeta={staffShareBeta}
+            onConfirm={setConfirm}
+            onCreate={() => {
+              setActiveTab("create");
+              requestAnimationFrame(() => document.getElementById("step-input")?.focus());
+            }}
+          />
+        </div>
+
+        <div
+          id="main-panel-create"
+          role="tabpanel"
+          aria-labelledby="main-tab-create"
+          hidden={activeTab !== "create"}
+          className="space-y-6"
+        >
+          {restored && <p className="alert alert-info print:hidden">로그인 전에 입력하던 근무 조건을 불러왔습니다.</p>}
         <section aria-labelledby="step-input" className="card print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
-            <h2 id="step-input" className="section-title flex items-center gap-2">
+            <h2 id="step-input" tabIndex={-1} className="section-title flex items-center gap-2">
               <StepNumber n={1} />
               근무 조건 입력
             </h2>
@@ -848,6 +954,16 @@ const ScheduleRunner = memo<IScheduleRunnerProps>(({ initialInput, staffShareBet
             </div>
           )}
         </section>
+        </div>
+
+        <div
+          id="main-panel-personal"
+          role="tabpanel"
+          aria-labelledby="main-tab-personal"
+          hidden={activeTab !== "personal"}
+        >
+          <ManagerCalendar active={activeTab === "personal"} onUnauthorized={toLogin} />
+        </div>
       </main>
     </div>
   );

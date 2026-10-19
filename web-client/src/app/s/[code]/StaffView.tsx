@@ -3,7 +3,7 @@
 import Image from "next/image";
 import React, { memo, useEffect, useMemo, useState } from "react";
 import { formatDate } from "../../InputForm";
-import { addDays, todayIso, weekday } from "../../ScheduleCalendar";
+import { addDays, HolidayTag, todayIso, weekday, weekendText } from "../../ScheduleCalendar";
 
 // GET /api/s/<code> 응답(기획서 7-3 계약)
 interface IStaffPeriod {
@@ -240,6 +240,7 @@ const StaffView = memo<{ code: string }>(({ code }) => {
                         <p className="tabular-nums">
                           <span className="font-semibold">{formatDate(m.date)}</span>
                           {m.date === today && <span className="ml-2 text-xs font-semibold text-accent">오늘</span>}
+                          <HolidayTag date={m.date} className="text-xs" />
                         </p>
                         <p className="mt-1">
                           {m.shift ? (
@@ -261,7 +262,7 @@ const StaffView = memo<{ code: string }>(({ code }) => {
                     ‹ 이전
                   </button>
                   <h2 className="flex-1 text-center text-sm font-semibold tabular-nums" aria-live="polite">
-                    {view === "day" ? formatDate(cursor) : weekDates.length ? `${formatDate(weekDates[0])} ~ ${formatDate(weekDates[weekDates.length - 1])}` : ""}
+                    {view === "day" ? <>{formatDate(cursor)}<HolidayTag date={cursor} className="text-xs" /></> : weekDates.length ? `${formatDate(weekDates[0])} ~ ${formatDate(weekDates[weekDates.length - 1])}` : ""}
                   </h2>
                   <button type="button" disabled={!canNext} onClick={() => move(1)} className="btn btn-secondary btn-sm">
                     다음 ›
@@ -272,9 +273,10 @@ const StaffView = memo<{ code: string }>(({ code }) => {
                 ) : (
                   weekDates.map((d) => (
                     <div key={d} className="card p-4">
-                      <h3 className={`mb-2 text-sm font-semibold tabular-nums ${weekday(d) === 0 ? "text-danger" : weekday(d) === 6 ? "text-accent" : ""}`}>
+                      <h3 className={`mb-2 text-sm font-semibold tabular-nums ${weekendText(d)}`}>
                         {formatDate(d)}
                         {d === today && <span className="ml-2 text-xs text-accent">오늘</span>}
+                        <HolidayTag date={d} className="text-xs" />
                       </h3>
                       {dayBlock(d)}
                     </div>
