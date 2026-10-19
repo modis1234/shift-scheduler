@@ -91,11 +91,11 @@ node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
 node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
 ```
 
-근무표 저장·게시(`/api/schedules`)는 생성 입력과 결과를 Postgres에 함께 저장한다(직원 개인정보 포함). 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `accounts.mjs delete`는 그 매장의 근무표·직원 공유 링크도 함께 지운다.
+근무표 저장·게시(`/api/schedules`)는 생성 입력과 결과를 Postgres에 함께 저장한다(직원 개인정보 포함). 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `내 일정`(`/api/manager-events`)은 로그인한 매장 관리자만 보는 개인 일정의 제목·메모·날짜·시각을 저장한다. 일정은 관리자가 직접 삭제하거나 매장 계정을 삭제할 때까지 보관하며 직원 공유 화면과 근무표 생성에는 포함하지 않는다. `accounts.mjs delete`는 그 매장의 근무표·직원 공유 링크·관리자 개인 일정을 함께 지운다.
 
 ### 데이터베이스 (Postgres / Supabase)
 
-매장 계정·근무표·직원 공유 링크는 Postgres 표 3개(`stores`, `schedules`, `share_links`)에 있다. 서버만 `DATABASE_URL`로 직접 접속하고(npm `postgres`), 브라우저는 DB에 붙지 않는다. 스키마는 `web-client/db/migrations/`의 SQL이며 앱이 자동으로 실행하지 않으므로 처음 한 번 직접 적용한다. 모든 표에 RLS를 켜 두어 Supabase Data API(anon 키)로는 읽히지 않는다.
+매장 계정·근무표·직원 공유 링크·관리자 개인 일정은 Postgres의 `stores`, `schedules`, `share_links`, `manager_events` 표에 있다. 서버만 `DATABASE_URL`로 직접 접속하고(npm `postgres`), 브라우저는 DB에 붙지 않는다. 스키마는 `web-client/db/migrations/`의 번호 순 SQL이며 앱이 자동으로 실행하지 않으므로 각 파일을 한 번씩 직접 적용한다. 모든 표에 RLS를 켜 두어 Supabase Data API(anon 키)로는 읽히지 않는다.
 
 `DATABASE_URL`에 `sslmode`가 없으면 SSL을 필수로 접속한다. SSL이 없는 로컬 Postgres는 끝에 `?sslmode=disable`을 붙인다.
 
@@ -104,7 +104,7 @@ node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테�
 1. [supabase.com](https://supabase.com) → New project. 데이터베이스 비밀번호를 정해 따로 보관한다(잊으면 Project Settings → Database에서 재설정).
 2. 프로젝트 화면 위쪽 **Connect** → Connection string에서 **Session pooler**(포트 5432) 주소를 복사한다. 서버리스가 아니므로 Session pooler나 Direct connection을 쓴다.
 3. `web-client/.env.local`에 `DATABASE_URL=<복사한 주소>`를 넣고 `[YOUR-PASSWORD]` 자리를 1의 비밀번호로 바꾼다(비밀번호에 `@`·`#` 등이 있으면 URL 인코딩).
-4. 왼쪽 메뉴 **SQL Editor** → New query에 `web-client/db/migrations/001_init.sql` 내용을 붙여 넣고 Run. psql이 있으면 `psql "$DATABASE_URL" -f web-client/db/migrations/001_init.sql`도 된다.
+4. 왼쪽 메뉴 **SQL Editor** → New query에서 `web-client/db/migrations/001_init.sql`, `002_manager_events.sql`을 번호 순서대로 각각 실행한다. psql이 있으면 각 파일에 `psql "$DATABASE_URL" -f <파일>`을 실행해도 된다.
 5. `cd web-client && node --env-file=.env.local scripts/accounts.mjs create "OO매장"`으로 매장과 초대 링크를 만든다.
 
 로컬에서 Supabase 없이 확인할 때:
@@ -112,6 +112,7 @@ node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테�
 ```bash
 docker run -d --name shift-pg -e POSTGRES_PASSWORD=dev -p 54329:5432 postgres:17
 docker exec -i shift-pg psql -U postgres < web-client/db/migrations/001_init.sql
+docker exec -i shift-pg psql -U postgres < web-client/db/migrations/002_manager_events.sql
 # .env.local: DATABASE_URL=postgresql://postgres:dev@localhost:54329/postgres?sslmode=disable
 ```
 

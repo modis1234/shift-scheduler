@@ -1,6 +1,7 @@
 "use client";
 
 import React, { memo, useMemo, useState } from "react";
+import { holidayName } from "@/lib/holidays";
 import { formatDate, toUtc, WEEKDAYS } from "./InputForm";
 import type { IEngineInput, IEngineResult } from "./ScheduleRunner";
 
@@ -10,9 +11,14 @@ type Person = { id: string; name: string };
 const DAY_MS = 86_400_000;
 export const addDays = (d: string, n: number) => new Date(toUtc(d) + n * DAY_MS).toISOString().slice(0, 10);
 export const weekday = (d: string) => new Date(toUtc(d)).getUTCDay();
-const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일 ${WEEKDAYS[weekday(d)]}요일`;
-// 주말 글자색: 일 = danger, 토 = accent (UI 가이드)
-const weekendText = (d: string) => (weekday(d) === 0 ? "text-danger" : weekday(d) === 6 ? "text-accent" : "");
+const dayLabel = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일 ${WEEKDAYS[weekday(d)]}요일${holidayName(d) ? ` ${holidayName(d)}` : ""}`;
+// 주말 글자색: 일·공휴일 = danger, 토 = accent (UI 가이드)
+export const weekendText = (d: string) => (weekday(d) === 0 || holidayName(d) ? "text-danger" : weekday(d) === 6 ? "text-accent" : "");
+/** 날짜 옆 공휴일 이름. 공휴일이 아니면 아무것도 그리지 않는다 */
+export const HolidayTag = ({ date, className = "" }: { date: string; className?: string }) => {
+  const name = holidayName(date);
+  return name ? <span className={`ml-1 text-[10px] font-medium text-danger ${className}`}>{name}</span> : null;
+};
 /** 오늘(브라우저 현지 날짜) */
 export const todayIso = () => {
   const t = new Date();
@@ -97,7 +103,11 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
   const canPrev = rangeOf(view, step(view, cursor, -1))[1] >= start;
   const canNext = rangeOf(view, step(view, cursor, 1))[0] <= end;
   const rangeTitle =
-    view === "month" ? `${Number(from.slice(0, 4))}년 ${Number(from.slice(5, 7))}월` : view === "week" ? `${formatDate(from)} ~ ${formatDate(to)}` : formatDate(cursor);
+    view === "month"
+      ? `${Number(from.slice(0, 4))}년 ${Number(from.slice(5, 7))}월`
+      : view === "week"
+        ? `${formatDate(from)} ~ ${formatDate(to)}`
+        : `${formatDate(cursor)}${holidayName(cursor) ? ` · ${holidayName(cursor)}` : ""}`;
   const inPeriod = (d: string) => d >= start && d <= end;
 
   const openDay = (d: string) => {
@@ -249,6 +259,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                   <span className={`text-xs font-semibold tabular-nums ${weekendText(d)}`}>
                     {Number(d.slice(8, 10))}
                     {isToday && <span className="ml-1 rounded bg-accent-soft px-1 text-[10px] text-accent">오늘</span>}
+                    <HolidayTag date={d} className="hidden sm:inline" />
                   </span>
                   {/* 데스크톱: 근무조별 줄 / 모바일: 근무조 점과 인원 */}
                   <span className="mt-1 hidden space-y-0.5 sm:block">
@@ -291,6 +302,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                     <th key={d} scope="col" aria-label={dayLabel(d)} className={`border-b border-border px-2 py-2 ${weekendText(d)} ${d === today ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}>
                       {formatDate(d)}
                       {d === today && <span className="ml-1 text-accent">오늘</span>}
+                      <HolidayTag date={d} className="block" />
                     </th>
                   ))}
                 </tr>
@@ -329,6 +341,7 @@ const ScheduleCalendar = memo<IScheduleCalendarProps>(({ input, result, colorOf,
                 <h4 className={`mb-1 text-sm font-semibold ${weekendText(d)}`}>
                   {formatDate(d)}
                   {d === today && <span className="ml-1 text-accent">오늘</span>}
+                  <HolidayTag date={d} className="text-xs" />
                 </h4>
                 {dayBlocks(d)}
               </section>
