@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { db } from "./db";
 import type { ManagerEvent } from "./manager-events";
+import type { EventColor } from "./manager-event-colors";
 import { isCalendarDate } from "./manager-events";
 import { parseManagerPattern } from "./manager-pattern-language";
 import type { ManagerPatternRule } from "./manager-pattern-language";
@@ -10,6 +11,8 @@ export type { ManagerPatternRule } from "./manager-pattern-language";
 const DAY_MS = 86_400_000;
 export const MAX_PATTERN_DAYS = 90;
 export const MAX_PATTERN_TEXT = 100;
+/** 패턴으로 만든 일정의 기본 색: 근무 파랑, 쉬는 날 초록 */
+const PATTERN_COLORS: Record<ManagerPatternEvent["kind"], EventColor> = { work: "blue", rest: "green" };
 
 export type ManagerPatternStatus = "new" | "existing-date" | "duplicate";
 export type ManagerPatternEvent = {
@@ -83,7 +86,7 @@ export function buildManagerPatternPreview(input: ManagerPatternInput, existing:
 
 type PatternRow = {
   id: string; date: string; title: string; allDay: boolean; startTime: string | null; endTime: string | null;
-  note: string; createdAt: Date; updatedAt: Date;
+  note: string; color: EventColor; createdAt: Date; updatedAt: Date;
 };
 
 const toManagerEvent = (row: PatternRow): ManagerEvent => ({
@@ -100,7 +103,7 @@ export async function createManagerPatternBatch(storeId: string, input: ManagerP
       SELECT id, event_date::text AS date, title, all_day AS "allDay",
              CASE WHEN start_time IS NULL THEN NULL ELSE to_char(start_time, 'HH24:MI') END AS "startTime",
              CASE WHEN end_time IS NULL THEN NULL ELSE to_char(end_time, 'HH24:MI') END AS "endTime",
-             note, created_at AS "createdAt", updated_at AS "updatedAt"
+             note, color, created_at AS "createdAt", updated_at AS "updatedAt"
       FROM manager_events
       WHERE store_id = ${storeId} AND event_date BETWEEN ${input.startDate} AND ${input.endDate}
       ORDER BY event_date, id`;
@@ -113,10 +116,10 @@ export async function createManagerPatternBatch(storeId: string, input: ManagerP
     for (const event of creatable) {
       const id = randomUUID();
       const [row] = await tx<PatternRow[]>`
-        INSERT INTO manager_events (id, store_id, event_date, title, all_day, start_time, end_time, note)
-        VALUES (${id}, ${storeId}, ${event.date}, ${event.title}, true, NULL, NULL, '')
+        INSERT INTO manager_events (id, store_id, event_date, title, all_day, start_time, end_time, note, color)
+        VALUES (${id}, ${storeId}, ${event.date}, ${event.title}, true, NULL, NULL, '', ${PATTERN_COLORS[event.kind]})
         RETURNING id, event_date::text AS date, title, all_day AS "allDay",
-                  NULL::text AS "startTime", NULL::text AS "endTime", note,
+                  NULL::text AS "startTime", NULL::text AS "endTime", note, color,
                   created_at AS "createdAt", updated_at AS "updatedAt"`;
       created.push(toManagerEvent(row));
     }

@@ -2,6 +2,8 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { holidayName } from "@/lib/holidays";
+import { EVENT_COLORS } from "@/lib/manager-event-colors";
+import type { EventColor } from "@/lib/manager-event-colors";
 import type { ManagerEvent, ManagerEventWrite } from "@/lib/manager-events";
 import ManagerPatternMaker from "./ManagerPatternMaker";
 
@@ -36,7 +38,7 @@ const calendarDates = (cursor: string) => {
   return Array.from({ length: 42 }, (_, index) => fromUtc(start + index * DAY_MS));
 };
 
-type Draft = { id: string | null; date: string; title: string; allDay: boolean; startTime: string; endTime: string; note: string };
+type Draft = { id: string | null; date: string; title: string; allDay: boolean; startTime: string; endTime: string; note: string; color: EventColor };
 
 interface IManagerCalendarProps {
   active: boolean;
@@ -139,7 +141,7 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
     setFormError("");
     requestAnimationFrame(() => dialogRef.current?.showModal());
   };
-  const add = () => showDraft({ id: null, date: selected, title: "", allDay: true, startTime: "09:00", endTime: "10:00", note: "" });
+  const add = () => showDraft({ id: null, date: selected, title: "", allDay: true, startTime: "09:00", endTime: "10:00", note: "", color: "gray" });
   const edit = (event: ManagerEvent) => showDraft({
     id: event.id,
     date: event.date,
@@ -148,6 +150,7 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
     startTime: event.startTime ?? "09:00",
     endTime: event.endTime ?? "10:00",
     note: event.note,
+    color: event.color,
   });
 
   const validate = (value: Draft): string => {
@@ -165,6 +168,7 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
     startTime: value.allDay ? null : value.startTime,
     endTime: value.allDay ? null : value.endTime,
     note: value.note.trim(),
+    color: value.color,
   });
 
   const save = async (event: React.FormEvent) => {
@@ -292,7 +296,7 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
                   {holiday && <span className="hidden truncate text-left text-[10px] font-medium text-danger sm:block">{holiday}</span>}
                   <span className="mt-1 hidden space-y-1 sm:block">
                     {dayEvents.slice(0, 2).map((item) => (
-                      <span key={item.id} className="block truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-left text-[11px]">
+                      <span key={item.id} className={`block truncate rounded-md px-1.5 py-0.5 text-left text-[11px] ${EVENT_COLORS[item.color].className}`}>
                         {item.allDay ? "" : `${item.startTime} `}{item.title}
                       </span>
                     ))}
@@ -322,7 +326,10 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
               {selectedEvents.map((event) => (
                 <li key={event.id} className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border px-3 py-2">
                   <span className="min-w-24 text-xs font-medium text-muted">{event.allDay ? "하루 종일" : `${event.startTime}~${event.endTime}`}</span>
-                  <span className="flex-1 font-medium">{event.title}</span>
+                  <span className="flex flex-1 items-center gap-2 font-medium">
+                    <span aria-hidden className={`inline-block h-3 w-3 shrink-0 rounded-full border border-border ${EVENT_COLORS[event.color].className}`} />
+                    {event.title}
+                  </span>
                   <button type="button" onClick={() => edit(event)} className="btn btn-secondary btn-sm" aria-label={`${event.title} 일정 수정`}>수정</button>
                 </li>
               ))}
@@ -356,6 +363,17 @@ const ManagerCalendar = memo<IManagerCalendarProps>(({ active, onUnauthorized })
                 <label className="text-sm font-medium">종료 시각<input type="time" required value={draft.endTime} onChange={(event) => setDraft({ ...draft, endTime: event.target.value })} className="input mt-1 w-full" /></label>
               </div>
             )}
+            <fieldset>
+              <legend className="text-sm font-medium">색</legend>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(Object.keys(EVENT_COLORS) as EventColor[]).map((key) => (
+                  <label key={key} className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium has-[:checked]:ring-2 has-[:checked]:ring-accent ${EVENT_COLORS[key].className}`}>
+                    <input type="radio" name="manager-event-color" value={key} checked={draft.color === key} onChange={() => setDraft({ ...draft, color: key })} />
+                    {EVENT_COLORS[key].label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <label className="block text-sm font-medium">메모
               <textarea value={draft.note} maxLength={200} rows={4} onChange={(event) => setDraft({ ...draft, note: event.target.value })} className="input mt-1 h-auto w-full py-2" />
             </label>

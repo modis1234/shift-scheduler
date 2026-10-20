@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
+import { isEventColor } from "./manager-event-colors";
+import type { EventColor } from "./manager-event-colors";
 
 export type ManagerEvent = {
   id: string;
@@ -9,6 +11,7 @@ export type ManagerEvent = {
   startTime: string | null;
   endTime: string | null;
   note: string;
+  color: EventColor;
   createdAt: string;
   updatedAt: string;
 };
@@ -25,6 +28,7 @@ type EventRow = {
   startTime: string | null;
   endTime: string | null;
   note: string;
+  color: EventColor;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -52,6 +56,9 @@ export function parseManagerEventWrite(input: unknown): ManagerEventParse {
   if (title.length > 50) return { error: "일정 제목은 50자까지 입력할 수 있습니다." };
   if (note.length > 200) return { error: "메모는 200자까지 입력할 수 있습니다." };
   if (typeof body.allDay !== "boolean") return { error: "하루 종일 여부를 확인해 주세요." };
+  // 색을 보내지 않는 예전 화면은 회색으로 저장한다
+  if (body.color !== undefined && !isEventColor(body.color)) return { error: "일정 색을 확인해 주세요." };
+  const color = body.color ?? "gray";
 
   let startTime: string | null = null;
   let endTime: string | null = null;
@@ -62,7 +69,7 @@ export function parseManagerEventWrite(input: unknown): ManagerEventParse {
     startTime = body.startTime;
     endTime = body.endTime;
   }
-  return { value: { date: body.date, title, allDay: body.allDay, startTime, endTime, note } };
+  return { value: { date: body.date, title, allDay: body.allDay, startTime, endTime, note, color } };
 }
 
 const select = (storeId: string, from: string, to: string) => db()<EventRow[]>`
@@ -73,6 +80,7 @@ const select = (storeId: string, from: string, to: string) => db()<EventRow[]>`
          CASE WHEN start_time IS NULL THEN NULL ELSE to_char(start_time, 'HH24:MI') END AS "startTime",
          CASE WHEN end_time IS NULL THEN NULL ELSE to_char(end_time, 'HH24:MI') END AS "endTime",
          note,
+         color,
          created_at AS "createdAt",
          updated_at AS "updatedAt"
   FROM manager_events
@@ -88,12 +96,12 @@ export async function createManagerEvent(storeId: string, event: ManagerEventWri
     await tx`SELECT 1 FROM stores WHERE id = ${storeId} FOR UPDATE`;
     const id = randomUUID();
     const [row] = await tx<EventRow[]>`
-      INSERT INTO manager_events (id, store_id, event_date, title, all_day, start_time, end_time, note)
-      VALUES (${id}, ${storeId}, ${event.date}, ${event.title}, ${event.allDay}, ${event.startTime}, ${event.endTime}, ${event.note})
+      INSERT INTO manager_events (id, store_id, event_date, title, all_day, start_time, end_time, note, color)
+      VALUES (${id}, ${storeId}, ${event.date}, ${event.title}, ${event.allDay}, ${event.startTime}, ${event.endTime}, ${event.note}, ${event.color})
       RETURNING id, event_date::text AS date, title, all_day AS "allDay",
                 CASE WHEN start_time IS NULL THEN NULL ELSE to_char(start_time, 'HH24:MI') END AS "startTime",
                 CASE WHEN end_time IS NULL THEN NULL ELSE to_char(end_time, 'HH24:MI') END AS "endTime",
-                note, created_at AS "createdAt", updated_at AS "updatedAt"`;
+                note, color, created_at AS "createdAt", updated_at AS "updatedAt"`;
     return view(row);
   });
 }
@@ -104,12 +112,12 @@ export async function updateManagerEvent(storeId: string, id: string, event: Man
     const [row] = await tx<EventRow[]>`
       UPDATE manager_events
       SET event_date = ${event.date}, title = ${event.title}, all_day = ${event.allDay},
-          start_time = ${event.startTime}, end_time = ${event.endTime}, note = ${event.note}, updated_at = now()
+          start_time = ${event.startTime}, end_time = ${event.endTime}, note = ${event.note}, color = ${event.color}, updated_at = now()
       WHERE store_id = ${storeId} AND id = ${id}
       RETURNING id, event_date::text AS date, title, all_day AS "allDay",
                 CASE WHEN start_time IS NULL THEN NULL ELSE to_char(start_time, 'HH24:MI') END AS "startTime",
                 CASE WHEN end_time IS NULL THEN NULL ELSE to_char(end_time, 'HH24:MI') END AS "endTime",
-                note, created_at AS "createdAt", updated_at AS "updatedAt"`;
+                note, color, created_at AS "createdAt", updated_at AS "updatedAt"`;
     return row ? view(row) : null;
   });
 }
