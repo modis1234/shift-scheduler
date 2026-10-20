@@ -2,6 +2,7 @@
 
 import React, { memo, useRef, useState } from "react";
 import type { ManagerEvent } from "@/lib/manager-events";
+import { EVENT_COLORS } from "@/lib/manager-event-colors";
 import type { ManagerPatternPreview } from "@/lib/manager-pattern";
 
 type PatternInput = { startDate: string; endDate: string; referenceDate: string; patternText: string };
@@ -60,6 +61,8 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     if (!response.ok || !data) throw new Error(message || "요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
     return data as T;
   };
+  // 종료일을 비우면 시작일 하루만
+  const body = { ...input, endDate: input.endDate || input.startDate };
   const showError = (message: string) => {
     setError(message);
     requestAnimationFrame(() => errorRef.current?.focus());
@@ -71,7 +74,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     setBusy("preview");
     setError("");
     try {
-      const result = await request<ManagerPatternPreview>("/api/manager-events/pattern-preview", input);
+      const result = await request<ManagerPatternPreview>("/api/manager-events/pattern-preview", body);
       if (version !== dialogVersionRef.current) return;
       setPreview(result);
       requestAnimationFrame(() => previewTitleRef.current?.focus());
@@ -85,15 +88,20 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
 
   const save = async () => {
     if (!preview) return;
+    if (preview.summary.deletes > 0 && !window.confirm(`기존 일정 ${preview.summary.deletes}개를 삭제합니다. 삭제하면 되돌릴 수 없습니다. 계속할까요?`)) return;
     setBusy("save");
     setError("");
     try {
-      const result = await request<{ created: number; skippedDuplicates: number; events: ManagerEvent[] }>(
+      const result = await request<{ created: number; skippedDuplicates: number; deleted: number; events: ManagerEvent[] }>(
         "/api/manager-events/pattern-batch",
-        { ...input, expectedDigest: preview.digest },
+        { ...body, expectedDigest: preview.digest },
       );
       dialogRef.current?.close();
-      setStatus(`${result.created}개 일정을 등록했습니다.${result.skippedDuplicates ? ` 중복 ${result.skippedDuplicates}개는 건너뛰었습니다.` : ""}`);
+      setStatus([
+        result.deleted ? `${result.deleted}개 일정을 삭제했습니다.` : "",
+        result.created ? `${result.created}개 일정을 등록했습니다.` : "",
+        result.skippedDuplicates ? `중복 ${result.skippedDuplicates}개는 건너뛰었습니다.` : "",
+      ].filter(Boolean).join(" "));
       onCreated(result.events, result.skippedDuplicates, input.startDate);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "일정을 등록하지 못했습니다. 저장된 일정은 없습니다. 잠시 뒤 다시 시도해 주세요.";
@@ -118,14 +126,14 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
         <form onSubmit={makePreview} aria-busy={busy !== null} className="space-y-4">
           <div>
             <h2 ref={dialogTitleRef} tabIndex={-1} id="manager-pattern-dialog-title" className="section-title">문장으로 여러 일정 만들기</h2>
-            <p className="mt-1 text-sm text-muted">기간과 반복 패턴을 입력하면 등록될 일정을 먼저 보여 드립니다.</p>
+            <p className="mt-1 text-sm text-muted">기간과 문장을 입력하면 등록·삭제될 일정을 먼저 보여 드립니다.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium">시작일
               <input type="date" required disabled={!!busy} value={input.startDate} onChange={(event) => update({ startDate: event.target.value })} className="input mt-1 w-full" />
             </label>
-            <label className="text-sm font-medium">종료일
-              <input type="date" required disabled={!!busy} value={input.endDate} onChange={(event) => update({ endDate: event.target.value })} className="input mt-1 w-full" />
+            <label className="text-sm font-medium">종료일 <span className="font-normal text-muted">(하루만이면 비워 두기)</span>
+              <input type="date" disabled={!!busy} value={input.endDate} onChange={(event) => update({ endDate: event.target.value })} className="input mt-1 w-full" />
             </label>
           </div>
           <label className="block text-sm font-medium">패턴 문장
@@ -139,7 +147,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               placeholder="예: 오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘"
               className="input mt-1 w-full"
             />
-            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “3일 야간 근무 후 2일 휴무 반복”</span>
+            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “해당일에 일정을 삭제해줘”, “해당 기간에 일정을 삭제하고 2일 근무 하루 휴무로 등록해줘, 휴무는 빨간색으로”</span>
           </label>
 
           {error && <p ref={errorRef} tabIndex={-1} role="alert" className="alert alert-danger">{error}</p>}
@@ -147,19 +155,33 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
           {preview && (
             <section aria-labelledby="manager-pattern-preview-title" className="rounded-[var(--radius)] border border-border p-4">
               <h3 ref={previewTitleRef} tabIndex={-1} id="manager-pattern-preview-title" className="font-semibold">
-                미리보기: {formatDate(input.startDate)}~{formatDate(input.endDate)}
+                미리보기: {formatDate(body.startDate)}{body.endDate !== body.startDate && `~${formatDate(body.endDate)}`}
               </h3>
               <p className="mt-1 text-sm text-muted">
-                {preview.normalized.workDays}일 {preview.normalized.workTitle} + {preview.normalized.restDays}일 쉬는 날을 반복합니다.
+                {[
+                  preview.normalized.deleteExisting && "이 기간의 기존 일정을 모두 삭제합니다.",
+                  preview.normalized.rule && `${preview.normalized.rule.workDays}일 ${preview.normalized.rule.workTitle}(${EVENT_COLORS[preview.normalized.rule.workColor].label}) + ${preview.normalized.rule.restDays}일 쉬는 날(${EVENT_COLORS[preview.normalized.rule.restColor].label})을 반복합니다.`,
+                ].filter(Boolean).join(" ")}
               </p>
               <p className="mt-2 text-sm font-medium" aria-live="polite">
-                새 일정 {preview.summary.creatable}개 · 중복 {preview.summary.duplicates}개 · 기존 일정 있는 날 {preview.summary.datesWithExisting}일
+                {preview.normalized.deleteExisting && <strong className="text-danger">삭제 {preview.summary.deletes}개 · </strong>}
+                새 일정 {preview.summary.creatable}개{!preview.normalized.deleteExisting && ` · 중복 ${preview.summary.duplicates}개 · 기존 일정 있는 날 ${preview.summary.datesWithExisting}일`}
               </p>
+              {preview.deletes.length > 0 && (
+                <ul aria-label="삭제할 일정" className="alert alert-danger mt-3 max-h-40 space-y-0.5 overflow-y-auto text-sm">
+                  {preview.deletes.map((item, index) => (
+                    <li key={`${item.date}-${index}`}><span className="tabular-nums">{formatDate(item.date)}</span> {item.title} — 삭제</li>
+                  ))}
+                </ul>
+              )}
               <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto border-t border-border pt-2">
                 {preview.events.map((item) => (
                   <li key={`${item.date}-${item.kind}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm odd:bg-surface-2">
                     <span className="min-w-20 tabular-nums">{formatDate(item.date)}</span>
-                    <span className="flex-1 font-medium">{item.title}</span>
+                    <span className="flex flex-1 items-center gap-2 font-medium">
+                      <span aria-hidden className={`inline-block h-3 w-3 shrink-0 rounded-full border border-border ${EVENT_COLORS[item.color].className}`} />
+                      {item.title}
+                    </span>
                     <span className="text-xs text-muted">
                       {item.status === "duplicate" ? "중복 — 등록하지 않음" : item.status === "existing-date" ? "기존 일정 있음" : "새 일정"}
                     </span>
@@ -174,13 +196,20 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               {preview ? "입력 수정" : "취소"}
             </button>
             {!preview && <button type="submit" disabled={!!busy} className="btn btn-primary">{busy === "preview" ? "미리보는 중…" : "일정 미리보기"}</button>}
-            {preview && preview.summary.creatable > 0 && (
+            {preview && preview.summary.creatable + preview.summary.deletes > 0 && (
               <button type="button" disabled={!!busy} onClick={() => void save()} className="btn btn-primary">
-                {busy === "save" ? "일정 등록하는 중…" : `${preview.summary.creatable}개 일정 등록`}
+                {busy === "save" ? "처리하는 중…" : [
+                  preview.summary.deletes && `${preview.summary.deletes}개 삭제`,
+                  preview.summary.creatable && `${preview.summary.creatable}개 등록`,
+                ].filter(Boolean).join("하고 ")}
               </button>
             )}
           </div>
-          {preview?.summary.creatable === 0 && <p className="text-right text-sm text-muted">등록할 새 일정이 없습니다. 같은 일정이 이미 등록되어 있습니다.</p>}
+          {preview && preview.summary.creatable + preview.summary.deletes === 0 && (
+            <p className="text-right text-sm text-muted">
+              {preview.normalized.rule ? "등록할 새 일정이 없습니다. 같은 일정이 이미 등록되어 있습니다." : "이 기간에 삭제할 일정이 없습니다."}
+            </p>
+          )}
         </form>
       </dialog>
     </>

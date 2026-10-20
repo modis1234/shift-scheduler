@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       ? (body as Record<string, string>).expectedDigest : "";
     const result = await createManagerPatternBatch(store.id, parsed.value, expectedDigest);
     if ("error" in result) return json({ error: result.error }, { status: result.status });
-    return json({ created: result.created.length, skippedDuplicates: result.skippedDuplicates, events: result.created }, { status: 201 });
+    return json({ created: result.created.length, skippedDuplicates: result.skippedDuplicates, deleted: result.deleted, events: result.created }, { status: 201 });
   } catch {
     return json({ error: "일정을 등록하지 못했습니다. 저장된 일정은 없습니다. 잠시 뒤 다시 시도해 주세요." }, { status: 500 });
   }
