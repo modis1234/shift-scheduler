@@ -3,7 +3,6 @@ import { db } from "./db";
 import type { ManagerEvent } from "./manager-events";
 import type { EventColor } from "./manager-event-colors";
 import { isCalendarDate } from "./manager-events";
-import { parseManagerCommand } from "./manager-pattern-language";
 import type { ManagerCommand } from "./manager-pattern-language";
 
 export type { ManagerCommand, ManagerPatternRule } from "./manager-pattern-language";
@@ -46,16 +45,17 @@ export function parseManagerPatternInput(input: unknown): ManagerPatternParse {
   if (typeof body.patternText !== "string" || !body.patternText.trim()) return { error: "패턴 문장을 입력해 주세요." };
   const patternText = body.patternText.trim();
   if (patternText.length > MAX_PATTERN_TEXT) return { error: `패턴 문장은 ${MAX_PATTERN_TEXT}자까지 입력할 수 있습니다.` };
-  if (parseManagerCommand(patternText)?.fromToday && body.startDate !== body.referenceDate) {
-    return { error: "문장의 “오늘 날짜부터”와 시작일이 다릅니다. 시작일을 오늘로 바꾸거나 문장에서 해당 표현을 빼 주세요." };
-  }
   return { value: { startDate: body.startDate, endDate: body.endDate, referenceDate: body.referenceDate, patternText } };
 }
 
-export function buildManagerPatternPreview(input: ManagerPatternInput, existing: ExistingEvent[]): ManagerPatternPreview | { error: string } {
-  const normalized = parseManagerCommand(input.patternText);
-  if (!normalized) return { error: "문장을 해석하지 못했습니다. “2일 근무하고 1일 쉬기”, “해당 기간 일정을 삭제하고 2일 근무 1일 휴무, 휴무는 빨간색”처럼 입력해 주세요." };
+/** 문장이 "오늘부터"인데 시작일이 오늘이 아니면 오류 문구 */
+export function todayMismatch(input: ManagerPatternInput, command: ManagerCommand): string | null {
+  return command.fromToday && input.startDate !== input.referenceDate
+    ? "문장의 “오늘 날짜부터”와 시작일이 다릅니다. 시작일을 오늘로 바꾸거나 문장에서 해당 표현을 빼 주세요."
+    : null;
+}
 
+export function buildManagerPatternPreview(input: ManagerPatternInput, existing: ExistingEvent[], normalized: ManagerCommand): ManagerPatternPreview {
   const start = Date.parse(`${input.startDate}T00:00:00Z`);
   const end = Date.parse(`${input.endDate}T00:00:00Z`);
   const { rule, deleteExisting } = normalized;
@@ -102,7 +102,7 @@ const toManagerEvent = (row: PatternRow): ManagerEvent => ({
 });
 
 /** 미리보기 이후 상태를 다시 검증하고, 요청하면 기간 일정을 지운 뒤 새 일정만 한 트랜잭션으로 저장한다. */
-export async function createManagerPatternBatch(storeId: string, input: ManagerPatternInput, expectedDigest: string) {
+export async function createManagerPatternBatch(storeId: string, input: ManagerPatternInput, command: ManagerCommand, expectedDigest: string) {
   return db().begin(async (tx) => {
     await tx`SELECT 1 FROM stores WHERE id = ${storeId} FOR UPDATE`;
     const existing = await tx<PatternRow[]>`
@@ -113,8 +113,7 @@ export async function createManagerPatternBatch(storeId: string, input: ManagerP
       FROM manager_events
       WHERE store_id = ${storeId} AND event_date BETWEEN ${input.startDate} AND ${input.endDate}
       ORDER BY event_date, id`;
-    const preview = buildManagerPatternPreview(input, existing.map(toManagerEvent));
-    if ("error" in preview) return { error: preview.error, status: 400 as const };
+    const preview = buildManagerPatternPreview(input, existing.map(toManagerEvent), command);
     if (!expectedDigest || preview.digest !== expectedDigest) return { error: "기존 일정이 바뀌었습니다. 새 미리보기를 확인해 주세요.", status: 409 as const };
 
     if (preview.normalized.deleteExisting) {

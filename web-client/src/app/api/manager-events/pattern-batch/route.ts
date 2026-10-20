@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { sessionStore } from "@/lib/auth";
 import { readBody } from "@/lib/http";
-import { createManagerPatternBatch, parseManagerPatternInput } from "@/lib/manager-pattern";
+import { createManagerPatternBatch, parseManagerPatternInput, todayMismatch } from "@/lib/manager-pattern";
+import { storedManagerCommand, UNSUPPORTED_MESSAGE } from "@/lib/manager-pattern-ai";
 
 const headers = { "Cache-Control": "no-store" };
 const json = (body: unknown, init?: ResponseInit) => Response.json(body, { ...init, headers: { ...headers, ...init?.headers } });
@@ -18,7 +19,11 @@ export async function POST(req: NextRequest) {
     if ("error" in parsed) return json({ error: parsed.error }, { status: 400 });
     const expectedDigest = typeof (body as Record<string, unknown>).expectedDigest === "string"
       ? (body as Record<string, string>).expectedDigest : "";
-    const result = await createManagerPatternBatch(store.id, parsed.value, expectedDigest);
+    const command = storedManagerCommand(parsed.value.patternText, (body as Record<string, unknown>).commandToken);
+    if (!command) return json({ error: UNSUPPORTED_MESSAGE }, { status: 400 });
+    const mismatch = todayMismatch(parsed.value, command);
+    if (mismatch) return json({ error: mismatch }, { status: 400 });
+    const result = await createManagerPatternBatch(store.id, parsed.value, command, expectedDigest);
     if ("error" in result) return json({ error: result.error }, { status: result.status });
     return json({ created: result.created.length, skippedDuplicates: result.skippedDuplicates, deleted: result.deleted, events: result.created }, { status: 201 });
   } catch {

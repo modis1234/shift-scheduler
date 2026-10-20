@@ -5,6 +5,8 @@ import type { ManagerEvent } from "@/lib/manager-events";
 import { EVENT_COLORS } from "@/lib/manager-event-colors";
 import type { ManagerPatternPreview } from "@/lib/manager-pattern";
 
+type PreviewResult = ManagerPatternPreview & { source: "rule" | "ai"; commandToken?: string };
+
 type PatternInput = { startDate: string; endDate: string; referenceDate: string; patternText: string };
 
 interface Props {
@@ -31,7 +33,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     const today = localToday();
     return { startDate: today, endDate: "", referenceDate: today, patternText: "오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘" };
   });
-  const [preview, setPreview] = useState<ManagerPatternPreview | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"preview" | "save" | null>(null);
   const [status, setStatus] = useState("");
@@ -74,7 +76,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     setBusy("preview");
     setError("");
     try {
-      const result = await request<ManagerPatternPreview>("/api/manager-events/pattern-preview", body);
+      const result = await request<PreviewResult>("/api/manager-events/pattern-preview", body);
       if (version !== dialogVersionRef.current) return;
       setPreview(result);
       requestAnimationFrame(() => previewTitleRef.current?.focus());
@@ -94,7 +96,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     try {
       const result = await request<{ created: number; skippedDuplicates: number; deleted: number; events: ManagerEvent[] }>(
         "/api/manager-events/pattern-batch",
-        { ...body, expectedDigest: preview.digest },
+        { ...body, expectedDigest: preview.digest, commandToken: preview.commandToken },
       );
       dialogRef.current?.close();
       setStatus([
@@ -147,7 +149,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               placeholder="예: 오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘"
               className="input mt-1 w-full"
             />
-            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “해당일에 일정을 삭제해줘”, “해당 기간에 일정을 삭제하고 2일 근무 하루 휴무로 등록해줘, 휴무는 빨간색으로”</span>
+            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “해당일에 일정을 삭제해줘”, “해당 기간에 일정을 삭제하고 2일 근무 하루 휴무로 등록해줘, 휴무는 빨간색으로”. 예시와 다른 문장은 외부 AI(Google Gemini API 무료 등급)가 해석합니다. 이 서비스는 문장을 저장하지 않지만, Google은 무료 등급의 입력·응답을 서비스 개선에 쓰고 사람이 검토할 수 있습니다. 이름·연락처 같은 개인정보나 민감한 내용은 넣지 마세요.</span>
           </label>
 
           {error && <p ref={errorRef} tabIndex={-1} role="alert" className="alert alert-danger">{error}</p>}
@@ -157,6 +159,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               <h3 ref={previewTitleRef} tabIndex={-1} id="manager-pattern-preview-title" className="font-semibold">
                 미리보기: {formatDate(body.startDate)}{body.endDate !== body.startDate && `~${formatDate(body.endDate)}`}
               </h3>
+              {preview.source === "ai" && <p className="mt-1 text-sm font-medium text-warning">AI가 해석한 결과입니다. 아래 내용이 맞는지 확인해 주세요.</p>}
               <p className="mt-1 text-sm text-muted">
                 {[
                   preview.normalized.deleteExisting && "이 기간의 기존 일정을 모두 삭제합니다.",
