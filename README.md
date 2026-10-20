@@ -171,7 +171,9 @@ fly certs add <도메인>            # 안내되는 A/AAAA(또는 CNAME) 레코�
 
 카카오 개발자 콘솔에도 운영 도메인과 Redirect URI를 추가한다. `DATABASE_URL`은 Supabase Session pooler 주소를 쓴다.
 
-배포: 작업 트리가 dirty일 수 있으므로 커밋된 소스에서 올린다.
+배포: main에 머지되면 GitHub Actions(`.github/workflows/fly-deploy.yml`)가 자동으로 배포한다. 리포 Secrets에 `FLY_API_TOKEN`(`fly tokens create deploy -a <앱이름>`)이 있어야 하고, Actions 탭의 `Run workflow`로 수동 실행도 된다.
+
+손으로 올릴 때는 작업 트리가 dirty일 수 있으므로 커밋된 소스에서 올린다.
 
 ```bash
 SRC=$(mktemp -d) && git archive HEAD | tar -x -C "$SRC"
