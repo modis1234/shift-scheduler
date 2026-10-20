@@ -77,7 +77,7 @@ npm run dev   # http://localhost:3000
 
 `/login`, `/auth/*`, `/api/invite`, 정적 파일을 뺀 모든 페이지·API는 로그인이 필요하다(기획: `docs/planning/login.md`). `web-client/.env.local`에
 `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI`(`…/auth/kakao/callback`), `KAKAO_LOGOUT_REDIRECT_URI`(`…/login`),
-`SESSION_SECRET`(32자 이상, 바꾸면 모든 세션이 끊김), `DATABASE_URL`을 둔다. `KAKAO_API_BASE`는 가짜 카카오 서버로 테스트할 때만 설정한다(localhost·127.0.0.1·[::1]만 허용).
+`SESSION_SECRET`(32자 이상, 바꾸면 모든 세션이 끊김), `DATABASE_URL`을 둔다. `KAKAO_API_BASE`는 가짜 카카오 서버로 테스트할 때만 설정한다(localhost·127.0.0.1·[::1]만 허용). `GEMINI_API_KEY`(선택, Google AI Studio 발급)가 있으면 내 일정 문장 해석에 AI 보조를 쓰고, 없으면 규칙 파서만 동작한다. 모델은 `GEMINI_MODEL`(기본 `gemini-3.5-flash-lite`)로 바꿀 수 있다.
 
 매장 계정은 운영 담당자가 `web-client`에서 스크립트로 관리한다. 초대 링크는 1회용·7일이고, 링크로 카카오 로그인한 계정이 그 매장에 연결된다.
 
@@ -91,7 +91,7 @@ node --env-file=.env.local scripts/accounts.mjs delete <매장 id>
 node --env-file=.env.local scripts/accounts.mjs dev-session      # 개발·테스트용 'Cookie: ss_session=…' 출력(production 거부)
 ```
 
-근무표 저장·게시(`/api/schedules`)는 생성 입력과 결과를 Postgres에 함께 저장한다(직원 개인정보 포함). 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `내 일정`(`/api/manager-events`)은 로그인한 매장 관리자만 보는 개인 일정의 제목·메모·날짜·시각·뱃지 색을 저장한다. 일정은 관리자가 직접 삭제하거나 매장 계정을 삭제할 때까지 보관하며 직원 공유 화면과 근무표 생성에는 포함하지 않는다. `accounts.mjs delete`는 그 매장의 근무표·직원 공유 링크·관리자 개인 일정을 함께 지운다.
+근무표 저장·게시(`/api/schedules`)는 생성 입력과 결과를 Postgres에 함께 저장한다(직원 개인정보 포함). 저장된 근무표는 기간 최신순으로 표시되며 다시 열기·게시·게시 취소·삭제할 수 있다. `내 일정`(`/api/manager-events`)은 로그인한 매장 관리자만 보는 개인 일정의 제목·메모·날짜·시각·뱃지 색을 저장한다. 일정은 관리자가 직접 삭제하거나 매장 계정을 삭제할 때까지 보관하며 직원 공유 화면과 근무표 생성에는 포함하지 않는다. `문장으로 여러 일정 만들기`는 규칙으로 읽지 못한 문장만 외부 AI(Google Gemini API, 무료 등급)에 보내 해석한다. 전송하는 것은 그 문장뿐이며(기존 일정·메모·매장 정보 제외) 우리 서버는 문장을 저장·기록하지 않는다. 무료 등급(Unpaid Services)은 Google이 입력·응답을 제품 개선에 쓰고 사람 검토자가 볼 수 있으므로([약관](https://ai.google.dev/gemini-api/terms)) 입력 화면에서 이를 알리고 개인정보·민감정보를 넣지 않도록 안내한다. 삭제는 AI 경로에서 일어나지 않는다. 삭제가 들어간 문장은 규칙 파서가 전부 읽은 경우에만 처리하고 AI로 보내지 않는다. `accounts.mjs delete`는 그 매장의 근무표·직원 공유 링크·관리자 개인 일정을 함께 지운다.
 
 ### 데이터베이스 (Postgres / Supabase)
 
