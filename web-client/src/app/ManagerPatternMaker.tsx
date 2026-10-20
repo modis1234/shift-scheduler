@@ -31,7 +31,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
   const dialogVersionRef = useRef(0);
   const [input, setInput] = useState<PatternInput>(() => {
     const today = localToday();
-    return { startDate: today, endDate: "", referenceDate: today, patternText: "오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘" };
+    return { startDate: today, endDate: "", referenceDate: today, patternText: "" };
   });
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [error, setError] = useState("");
@@ -41,7 +41,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
   const open = () => {
     dialogVersionRef.current += 1;
     const today = localToday();
-    setInput({ startDate: today, endDate: "", referenceDate: today, patternText: "오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘" });
+    setInput({ startDate: today, endDate: "", referenceDate: today, patternText: "" });
     setPreview(null);
     setError("");
     dialogRef.current?.showModal();
