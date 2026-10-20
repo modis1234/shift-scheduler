@@ -1,6 +1,6 @@
 # Fly.io 배포 설정. 비밀 값은 여기 두지 않고 `fly secrets set`으로 넣는다(README '배포 (Fly.io)').
-# app 이름은 `fly apps create` 때 정한 값으로 바꾼다.
-app = "shift-scheduler"
+# 개발용 앱(https://shift-scheduler-wispy-water-5363.fly.dev). DB는 로컬과 같은 Supabase 프로젝트를 쓴다(실데이터 주의).
+app = "shift-scheduler-wispy-water-5363"
 primary_region = "nrt" # Supabase(ap-northeast-1)와 같은 도쿄
 
 [build]
