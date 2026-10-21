@@ -1,8 +1,10 @@
 import type { EventColor } from "./manager-event-colors";
 
-export type ManagerPatternRule = { workDays: number; restDays: number; workTitle: string; workColor: EventColor; restColor: EventColor };
-/** deleteExisting: 선택한 기간의 기존 일정을 지운다. rule: 반복 등록(없으면 삭제만). fromToday: 문장 앞머리에 "오늘부터/오늘 기준으로"가 있음 */
-export type ManagerCommand = { deleteExisting: boolean; rule: ManagerPatternRule | null; fromToday: boolean };
+export type ManagerPatternRule = { workDays: number; restDays: number; workTitle: string; restTitle: string; workColor: EventColor; restColor: EventColor };
+export const DEFAULT_REST_TITLE = "쉬는 날";
+/** deleteExisting: 선택한 기간의 기존 일정을 지운다. rule: 반복 등록(없으면 삭제만). fromToday: 문장 앞머리에 "오늘부터/오늘 기준으로"가 있음.
+ * rename: 기간 안에서 제목이 정확히 from인 일정을 to로 바꾼다(단독 명령) */
+export type ManagerCommand = { deleteExisting: boolean; rule: ManagerPatternRule | null; fromToday: boolean; rename?: { from: string; to: string } };
 
 const KOREAN_DAYS: Record<string, number> = { 하루: 1, 이틀: 2, 사흘: 3, 나흘: 4, 닷새: 5, 엿새: 6, 이레: 7, 여드레: 8, 아흐레: 9, 열흘: 10 };
 const countValue = (value: string) => KOREAN_DAYS[value] ?? Number(value.replace("일", ""));
@@ -22,6 +24,8 @@ const START = "(?<=^|\\s)";
 const END = "(?=\\s|$)";
 // "휴무는 빨간색으로 등록", "근무는 파란색"
 const TARGET_COLOR = new RegExp(`${START}(근무|휴무|휴일|쉬는\\s?날)(?:은|는)\\s*${COLOR_WORD}색(?:으로|로)?(?:\\s*(?:등록|표시|설정))?${PLEASE}${END}`, "g");
+// "쉬는 날은 휴무로 저장" → 쉬는 날 일정 제목(색 절을 먼저 떼므로 "휴무는 빨간색으로"와 겹치지 않는다)
+const REST_TITLE = new RegExp(`${START}(?:쉬는\\s?날|휴무일?|휴일)(?:은|는)\\s*(\\S.{0,29}?)(?:으로|로)(?:\\s*(?:저장|등록|표시|바꿔|해))?${PLEASE}${END}`);
 // 대상 없이 "빨간색으로" → 근무·쉬는 날 모두
 const ALL_COLOR = new RegExp(`${START}${COLOR_WORD}색(?:으로|로)${END}`, "g");
 // 문장 맨 앞의 완전한 삭제 절만: "해당 기간에 일정을 삭제하고", "해당일에 일정을 삭제해줘", "모든 일정을 제거하고", "기존 거 다 날리고", "그날 일정 싹 지워줘".
@@ -38,6 +42,9 @@ const PREFIX = /^(?:(오늘(?:\s?날짜)?\s?(?:부터|기준으로)|시작일부
 const SUFFIX = /\s*(?:패턴|반복)?\s*(?:(?:으로|로)\s*)?(?:일정(?:을|를)?\s*)?(?:등록|추가)?\s*(?:해\s?(?:줘|주세요)|하기)?$/;
 const COUNT = "(하루|이틀|사흘|나흘|닷새|엿새|이레|여드레|아흐레|열흘|\\d{1,2}일)";
 const CORE = new RegExp(`^${COUNT}(?:은|는)?\\s*(.+?)\\s*(?:하고|후)?\\s*${COUNT}(?:은|는)?\\s*(?:쉬기|쉬는\\s?날|쉬는|휴무|휴일)$`);
+
+// 단독 제목 변경: "쉬는 날은 휴무로 수정", "해당 기간 쉬는 날 일정을 휴무로 바꿔줘". 문장 전체가 이 형태여야 한다
+const RENAME = /^(?:(?:해당|선택한|이)\s?(?:일|날|날짜|기간)(?:에|의)?\s*(?:있는\s*)?|그날\s*)?(.+?)(?:\s*일정)?(?:은|는|을|를)\s+(.+?)(?:으로|로)\s*(?:수정|변경|바꿔|바꾸기|저장)(?:하기|해)?(?:\s*(?:줘|주세요))?$/;
 
 const normalize = (text: string) => text.trim().replace(/[,，]/g, " ").replace(/\s+/g, " ").replace(/[.!?。]+$/, "");
 
@@ -60,6 +67,14 @@ export function splitLeadingDelete(text: string): { deleteExisting: boolean; fro
 /** 제한된 한국어 명령을 추측 없이 해석한다. 아는 표현을 하나씩 떼어 내고, 남는 말이 있으면 전체를 거부한다. */
 export function parseManagerCommand(text: string): ManagerCommand | null {
   let rest = normalize(text);
+  // from·to가 제목처럼 보일 때만 제목 변경이다. "2일 근무 1일 휴무 쉬는 날은 휴무로 저장"은 from에 일수가 섞여 아래 반복 등록으로 간다
+  // "쉬는 날"의 "는"을 조사로 읽지 않도록 잠시 한 덩어리로 묶는다
+  const rename = rest.replace(/쉬는\s?날/g, "\u0001").match(RENAME);
+  if (rename) {
+    const [from, to] = [rename[1], rename[2]].map((value) => value.replace(/\u0001/g, "쉬는 날").trim());
+    const colorOnly = new RegExp(`^${COLOR_WORD}색?$`);
+    if (isWorkTitle(from) && isWorkTitle(to) && from !== to && !colorOnly.test(to)) return { deleteExisting: false, rule: null, fromToday: false, rename: { from, to } };
+  }
   const colors: Partial<Record<"work" | "rest", EventColor>> = {};
   rest = rest.replace(TARGET_COLOR, (_m, target: string, color: string) => {
     colors[/근무/.test(target) ? "work" : "rest"] = COLOR_OF[color];
@@ -70,17 +85,24 @@ export function parseManagerCommand(text: string): ManagerCommand | null {
     colors.rest ??= COLOR_OF[color];
     return " ";
   });
+  let restTitle: string | undefined;
+  rest = rest.replace(REST_TITLE, (_m, title: string) => {
+    restTitle = title.trim();
+    return " ";
+  });
+  // "휴무는 빨강으로"처럼 '색'을 뺀 색 지정을 제목으로 받지 않는다
+  if (restTitle !== undefined && new RegExp(`^${COLOR_WORD}색?$`).test(restTitle)) return null;
   const lead = splitLeadingDelete(rest);
   const { deleteExisting, fromToday } = lead;
   rest = lead.rest.replace(SUFFIX, "").trim();
 
-  if (!rest) return deleteExisting && !colors.work && !colors.rest ? { deleteExisting, rule: null, fromToday } : null;
+  if (!rest) return deleteExisting && !colors.work && !colors.rest && restTitle === undefined ? { deleteExisting, rule: null, fromToday } : null;
   const match = rest.match(CORE);
   if (!match) return null;
   const workDays = countValue(match[1]);
   const restDays = countValue(match[3]);
   const workTitle = match[2].trim();
   if (!Number.isInteger(workDays) || !Number.isInteger(restDays) || workDays < 1 || workDays > 30 || restDays < 1 || restDays > 30) return null;
-  if (!isWorkTitle(workTitle)) return null;
-  return { deleteExisting, rule: { workDays, restDays, workTitle, workColor: colors.work ?? "blue", restColor: colors.rest ?? "green" }, fromToday };
+  if (!isWorkTitle(workTitle) || (restTitle !== undefined && !isWorkTitle(restTitle))) return null;
+  return { deleteExisting, rule: { workDays, restDays, workTitle, restTitle: restTitle ?? DEFAULT_REST_TITLE, workColor: colors.work ?? "blue", restColor: colors.rest ?? "green" }, fromToday };
 }

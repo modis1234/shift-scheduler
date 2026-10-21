@@ -21,10 +21,12 @@ export type ManagerPatternEvent = {
 };
 export type ManagerPatternPreview = {
   normalized: ManagerCommand;
-  summary: { total: number; creatable: number; duplicates: number; datesWithExisting: number; deletes: number };
+  summary: { total: number; creatable: number; duplicates: number; datesWithExisting: number; deletes: number; renames: number };
   events: ManagerPatternEvent[];
   /** deleteExisting일 때 지워질 기존 일정 */
   deletes: Array<{ date: string; title: string }>;
+  /** rename일 때 제목이 바뀔 기존 일정 */
+  renames: Array<{ date: string; from: string; to: string }>;
   digest: string;
 };
 export type ManagerPatternInput = { startDate: string; endDate: string; referenceDate: string; patternText: string };
@@ -67,7 +69,7 @@ export function buildManagerPatternPreview(input: ManagerPatternInput, existing:
   for (let time = start, index = 0; rule && time <= end; time += DAY_MS, index += 1) {
     const date = fromUtc(time);
     const kind = index % (rule.workDays + rule.restDays) < rule.workDays ? "work" as const : "rest" as const;
-    const title = kind === "work" ? rule.workTitle : "쉬는 날";
+    const title = kind === "work" ? rule.workTitle : rule.restTitle;
     const color = kind === "work" ? rule.workColor : rule.restColor;
     const sameDate = remaining.filter((event) => event.date === date);
     const duplicate = sameDate.some((event) => event.allDay && event.title === title);
@@ -75,6 +77,8 @@ export function buildManagerPatternPreview(input: ManagerPatternInput, existing:
     events.push({ date, title, kind, color, status: duplicate ? "duplicate" : sameDate.length ? "existing-date" : "new" });
   }
   const deletes = deleteExisting ? existing.map((event) => ({ date: event.date, title: event.title })) : [];
+  const { rename } = normalized;
+  const renames = rename ? existing.filter((event) => event.title === rename.from).map((event) => ({ date: event.date, from: rename.from, to: rename.to })) : [];
 
   const duplicates = events.filter((event) => event.status === "duplicate").length;
   const snapshot = existing
@@ -83,9 +87,10 @@ export function buildManagerPatternPreview(input: ManagerPatternInput, existing:
   const digest = createHash("sha256").update(JSON.stringify({ input, normalized, events, snapshot })).digest("base64url");
   return {
     normalized,
-    summary: { total: events.length, creatable: events.length - duplicates, duplicates, datesWithExisting: datesWithExisting.size, deletes: deletes.length },
+    summary: { total: events.length, creatable: events.length - duplicates, duplicates, datesWithExisting: datesWithExisting.size, deletes: deletes.length, renames: renames.length },
     events,
     deletes,
+    renames,
     digest,
   };
 }
@@ -101,7 +106,7 @@ const toManagerEvent = (row: PatternRow): ManagerEvent => ({
   updatedAt: row.updatedAt.toISOString(),
 });
 
-/** 미리보기 이후 상태를 다시 검증하고, 요청하면 기간 일정을 지운 뒤 새 일정만 한 트랜잭션으로 저장한다. */
+/** 미리보기 이후 상태를 다시 검증하고, 요청하면 기간 일정을 지우거나 제목을 바꾼 뒤 새 일정만 한 트랜잭션으로 저장한다. */
 export async function createManagerPatternBatch(storeId: string, input: ManagerPatternInput, command: ManagerCommand, expectedDigest: string) {
   return db().begin(async (tx) => {
     await tx`SELECT 1 FROM stores WHERE id = ${storeId} FOR UPDATE`;
@@ -119,6 +124,11 @@ export async function createManagerPatternBatch(storeId: string, input: ManagerP
     if (preview.normalized.deleteExisting) {
       await tx`DELETE FROM manager_events WHERE store_id = ${storeId} AND event_date BETWEEN ${input.startDate} AND ${input.endDate}`;
     }
+    const { rename } = preview.normalized;
+    if (rename) {
+      await tx`UPDATE manager_events SET title = ${rename.to}, updated_at = now()
+               WHERE store_id = ${storeId} AND event_date BETWEEN ${input.startDate} AND ${input.endDate} AND title = ${rename.from}`;
+    }
     const creatable = preview.events.filter((event) => event.status !== "duplicate");
     const created: ManagerEvent[] = [];
     for (const event of creatable) {
@@ -131,6 +141,6 @@ export async function createManagerPatternBatch(storeId: string, input: ManagerP
                   created_at AS "createdAt", updated_at AS "updatedAt"`;
       created.push(toManagerEvent(row));
     }
-    return { created, skippedDuplicates: preview.summary.duplicates, deleted: preview.summary.deletes };
+    return { created, skippedDuplicates: preview.summary.duplicates, deleted: preview.summary.deletes, renamed: preview.summary.renames };
   });
 }

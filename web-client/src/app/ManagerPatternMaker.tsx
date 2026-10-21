@@ -94,13 +94,14 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
     setBusy("save");
     setError("");
     try {
-      const result = await request<{ created: number; skippedDuplicates: number; deleted: number; events: ManagerEvent[] }>(
+      const result = await request<{ created: number; skippedDuplicates: number; deleted: number; renamed: number; events: ManagerEvent[] }>(
         "/api/manager-events/pattern-batch",
         { ...body, expectedDigest: preview.digest, commandToken: preview.commandToken },
       );
       dialogRef.current?.close();
       setStatus([
         result.deleted ? `${result.deleted}개 일정을 삭제했습니다.` : "",
+        result.renamed ? `${result.renamed}개 일정의 제목을 바꿨습니다.` : "",
         result.created ? `${result.created}개 일정을 등록했습니다.` : "",
         result.skippedDuplicates ? `중복 ${result.skippedDuplicates}개는 건너뛰었습니다.` : "",
       ].filter(Boolean).join(" "));
@@ -149,7 +150,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               placeholder="예: 오늘 날짜부터 2일은 근무하고 하루는 쉬는 패턴으로 일정을 등록해줘"
               className="input mt-1 w-full"
             />
-            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “해당일에 일정을 삭제해줘”, “해당 기간에 일정을 삭제하고 2일 근무 하루 휴무로 등록해줘, 휴무는 빨간색으로”. 예시와 다른 문장은 외부 AI(Google Gemini API 무료 등급)가 해석합니다. 이 서비스는 문장을 저장하지 않지만, Google은 무료 등급의 입력·응답을 서비스 개선에 쓰고 사람이 검토할 수 있습니다. 이름·연락처 같은 개인정보나 민감한 내용은 넣지 마세요.</span>
+            <span className="mt-1 block text-xs font-normal text-muted">예: “2일 근무하고 1일 쉬기”, “해당일에 일정을 삭제해줘”, “해당 기간에 일정을 삭제하고 2일 근무 하루 휴무로 등록해줘, 휴무는 빨간색으로”, “쉬는 날은 휴무로 수정”. 예시와 다른 문장은 외부 AI(Google Gemini API 무료 등급)가 해석합니다. 이 서비스는 문장을 저장하지 않지만, Google은 무료 등급의 입력·응답을 서비스 개선에 쓰고 사람이 검토할 수 있습니다. 이름·연락처 같은 개인정보나 민감한 내용은 넣지 마세요.</span>
           </label>
 
           {error && <p ref={errorRef} tabIndex={-1} role="alert" className="alert alert-danger">{error}</p>}
@@ -163,12 +164,15 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               <p className="mt-1 text-sm text-muted">
                 {[
                   preview.normalized.deleteExisting && "이 기간의 기존 일정을 모두 삭제합니다.",
-                  preview.normalized.rule && `${preview.normalized.rule.workDays}일 ${preview.normalized.rule.workTitle}(${EVENT_COLORS[preview.normalized.rule.workColor].label}) + ${preview.normalized.rule.restDays}일 쉬는 날(${EVENT_COLORS[preview.normalized.rule.restColor].label})을 반복합니다.`,
+                  preview.normalized.rename && `이 기간의 ‘${preview.normalized.rename.from}’ 일정 제목을 ‘${preview.normalized.rename.to}’(으)로 바꿉니다.`,
+                  preview.normalized.rule && `${preview.normalized.rule.workDays}일 ${preview.normalized.rule.workTitle}(${EVENT_COLORS[preview.normalized.rule.workColor].label}) + ${preview.normalized.rule.restDays}일 ${preview.normalized.rule.restTitle}(${EVENT_COLORS[preview.normalized.rule.restColor].label})을 반복합니다.`,
                 ].filter(Boolean).join(" ")}
               </p>
               <p className="mt-2 text-sm font-medium" aria-live="polite">
-                {preview.normalized.deleteExisting && <strong className="text-danger">삭제 {preview.summary.deletes}개 · </strong>}
-                새 일정 {preview.summary.creatable}개{!preview.normalized.deleteExisting && ` · 중복 ${preview.summary.duplicates}개 · 기존 일정 있는 날 ${preview.summary.datesWithExisting}일`}
+                {preview.normalized.rename ? `제목 변경 ${preview.summary.renames}개` : <>
+                  {preview.normalized.deleteExisting && <strong className="text-danger">삭제 {preview.summary.deletes}개 · </strong>}
+                  새 일정 {preview.summary.creatable}개{!preview.normalized.deleteExisting && ` · 중복 ${preview.summary.duplicates}개 · 기존 일정 있는 날 ${preview.summary.datesWithExisting}일`}
+                </>}
               </p>
               {preview.deletes.length > 0 && (
                 <ul aria-label="삭제할 일정" className="alert alert-danger mt-3 max-h-40 space-y-0.5 overflow-y-auto text-sm">
@@ -177,7 +181,14 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
                   ))}
                 </ul>
               )}
-              <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto border-t border-border pt-2">
+              {preview.renames.length > 0 && (
+                <ul aria-label="제목을 바꿀 일정" className="mt-3 max-h-40 space-y-0.5 overflow-y-auto rounded-md border border-border p-2 text-sm">
+                  {preview.renames.map((item) => (
+                    <li key={item.date}><span className="tabular-nums">{formatDate(item.date)}</span> {item.from} → {item.to}</li>
+                  ))}
+                </ul>
+              )}
+              {preview.events.length > 0 && <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto border-t border-border pt-2">
                 {preview.events.map((item) => (
                   <li key={`${item.date}-${item.kind}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm odd:bg-surface-2">
                     <span className="min-w-20 tabular-nums">{formatDate(item.date)}</span>
@@ -190,7 +201,7 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
                     </span>
                   </li>
                 ))}
-              </ul>
+              </ul>}
             </section>
           )}
 
@@ -199,18 +210,19 @@ const ManagerPatternMaker = memo<Props>(({ onCreated, onUnauthorized }) => {
               {preview ? "입력 수정" : "취소"}
             </button>
             {!preview && <button type="submit" disabled={!!busy} className="btn btn-primary">{busy === "preview" ? "미리보는 중…" : "일정 미리보기"}</button>}
-            {preview && preview.summary.creatable + preview.summary.deletes > 0 && (
+            {preview && preview.summary.creatable + preview.summary.deletes + preview.summary.renames > 0 && (
               <button type="button" disabled={!!busy} onClick={() => void save()} className="btn btn-primary">
                 {busy === "save" ? "처리하는 중…" : [
                   preview.summary.deletes && `${preview.summary.deletes}개 삭제`,
+                  preview.summary.renames && `${preview.summary.renames}개 제목 변경`,
                   preview.summary.creatable && `${preview.summary.creatable}개 등록`,
                 ].filter(Boolean).join("하고 ")}
               </button>
             )}
           </div>
-          {preview && preview.summary.creatable + preview.summary.deletes === 0 && (
+          {preview && preview.summary.creatable + preview.summary.deletes + preview.summary.renames === 0 && (
             <p className="text-right text-sm text-muted">
-              {preview.normalized.rule ? "등록할 새 일정이 없습니다. 같은 일정이 이미 등록되어 있습니다." : "이 기간에 삭제할 일정이 없습니다."}
+              {preview.normalized.rename ? `이 기간에 ‘${preview.normalized.rename.from}’ 일정이 없습니다.` : preview.normalized.rule ? "등록할 새 일정이 없습니다. 같은 일정이 이미 등록되어 있습니다." : "이 기간에 삭제할 일정이 없습니다."}
             </p>
           )}
         </form>
