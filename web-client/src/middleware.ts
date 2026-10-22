@@ -5,11 +5,12 @@ import { clearSessionCookie, readSession, redirectTo, SESSION_COOKIE, setSession
 export const config = {
   runtime: "nodejs",
   // 정적 파일 제외
-  matcher: ["/((?!_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp|txt|xml|webmanifest)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp|txt|xml|webmanifest|js|html)$).*)"],
 };
 
 const isShare = (path: string) => path.startsWith("/s/") || path.startsWith("/api/s/"); // 직원 공유 화면·API(로그인 없음)
-const isPublic = (path: string) => path === "/login" || path.startsWith("/auth/") || path === "/api/invite" || isShare(path);
+// /app은 설치 앱 시작 화면: 로그인 여부를 페이지가 보고 관리자·직원 화면으로 나눈다
+const isPublic = (path: string) => path === "/login" || path === "/app" || path.startsWith("/auth/") || path === "/api/invite" || isShare(path);
 // 주소에 공유 코드가 있으므로 캐시·검색 엔진·Referer로 새지 않게 한다
 function noShareLeak(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store");

@@ -22,6 +22,8 @@ interface IStaffShare {
 type View = "mine" | "day" | "week";
 
 const nameKey = (code: string) => `shift-scheduler:staff-name:${code}`;
+/** 이 기기에서 마지막으로 연 직원 공유 코드. 앱 시작 화면(/app)이 읽는다 */
+export const LAST_SHARE_KEY = "shift-scheduler:last-share-code";
 
 /** 처음 여는 기간: 오늘이 든 기간 → 가장 가까운 앞으로의 기간 → 가장 최근에 끝난 기간. periods는 startDate 오름차순 */
 function pickPeriod(periods: IStaffPeriod[], today: string): number {
@@ -46,9 +48,18 @@ const StaffView = memo<{ code: string }>(({ code }) => {
     let alive = true;
     fetch(`/api/s/${encodeURIComponent(code)}`, { cache: "no-store" })
       .then(async (r) => {
-        if (r.status === 404) return alive && setData("gone");
+        if (r.status === 404) {
+          // 앱 시작 화면(/app)이 바뀐 링크로 다시 보내지 않게 지운다
+          try {
+            if (localStorage.getItem(LAST_SHARE_KEY) === code) localStorage.removeItem(LAST_SHARE_KEY);
+          } catch {}
+          return alive && setData("gone");
+        }
         if (!r.ok) throw new Error();
         const d = (await r.json()) as IStaffShare;
+        try {
+          localStorage.setItem(LAST_SHARE_KEY, code);
+        } catch {}
         if (alive) {
           setData(d);
           if (d.periods.length) setPeriodIdx(pickPeriod(d.periods, today));
