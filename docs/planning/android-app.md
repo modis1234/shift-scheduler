@@ -120,7 +120,7 @@
 
 ### 6.1 앱 시작 `/app`
 
-구성: 앱 아이콘, 앱 이름, `어떤 화면을 열까요?`, `[매장 관리자 로그인]`, 직원 링크 안내, 개인정보 처리방침 링크.
+구성: 앱 아이콘, 앱 이름, `어떤 화면을 열까요?`, `[매장 관리자 로그인]`, 직원 링크 안내, 개인정보 처리방침 링크(**2026-10-22 사용자 결정: 처리방침 페이지가 아직 없어 1a에서는 빼고 2단계(Play 등록 전)에 페이지와 함께 추가**).
 
 | 상태 | 표시 |
 |---|---|
@@ -308,7 +308,7 @@ notification_outbox
 
 ### 2단계 — 유료 운영·Google Play 출시(후속 승인 후)
 
-1. 소유 주체·운영 origin·Play 계정 유형·상시 작업자 예산을 사용자가 승인한다.
+1. 소유 주체·운영 origin·Play 계정 유형·상시 작업자 예산을 사용자가 승인한다. 운영 주체·연락처·개인정보 보호책임자를 받아 개인정보 처리방침 페이지(`/privacy`)를 만들고 `/app`·로그인 화면에 연결한다(1a에서 미룸).
 2. 프로덕션 패키지와 서명, 운영 origin, 개인정보 처리방침을 확정하고 Android App Bundle(AAB)을 만든다.
 3. `assetlinks.json`을 Play App Signing 인증서로 검증하며 실패 시 Custom Tab이 되는 회귀 테스트가 있다.
 4. Fly 운영 환경에서 HTTP 앱과 별개로 작업자가 상시 실행되며 머신 유휴 정지 중에도 예약 시각 허용 오차 2분 안에 발송된다.
@@ -366,3 +366,10 @@ notification_outbox
 - Bubblewrap 알림 위임(`enableNotifications`): <https://github.com/GoogleChromeLabs/bubblewrap/blob/main/packages/cli/README.md>
 - iOS 홈 화면 웹 앱 Web Push: <https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers>
 
+
+## 15. 1a 구현 기록 (2026-10-22)
+
+- manifest(`public/manifest.webmanifest`): `id "/"`, `start_url "/app"`, `scope "/"`, 이름 `교대근무 스케줄러`, 192·512·512 maskable(꽉 찬 배경 변형)·SVG 아이콘. 루트 layout이 manifest·apple-touch-icon·theme-color를 주므로 관리자·직원 화면이 한 앱으로 설치된다(직원 페이지의 개별 설정 제거).
+- `/app`(로그인 불필요): 관리자 세션이면 서버에서 `/`로, 아니면 화면에서 마지막 직원 링크(`localStorage shift-scheduler:last-share-code`, 직원 화면이 정상 열릴 때 저장·404면 삭제)를 확인해 이동, 만료면 안내 + 역할 선택, 오프라인이면 다시 시도.
+- 개인정보 처리방침: 저장소에 페이지가 없다. 사용자 결정(2026-10-22, 리뷰 pwa-install-base/01 MEDIUM 대응)으로 1a 완료 범위에서 빼고 2단계 1번 결정(운영 주체 확정)과 함께 `/privacy` 페이지를 만들어 `/app`·로그인·Play 등록 정보에 연결한다. 1b부터 푸시 구독 정보를 저장하므로 외부 사용자에게 공개하기 전에는 반드시 갖춘다.
+- 서비스 워커(`public/sw.js`, 프로덕션에서만 등록): `/offline.html`만 캐시하고 페이지 이동이 네트워크 실패할 때만 보여 준다. 앱 셸·API·근무표·일정은 캐시하지 않으므로 10.1절의 "새 버전 안내"는 필요 없다(캐시된 화면이 없음). middleware matcher에서 `.js`·`.html` 정적 파일을 제외했다.
